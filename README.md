@@ -1,3 +1,3 @@
 # move_to_happy
 
-MTH README
+This will be a collection of scripts to help me move to happy.
