@@ -29,3 +29,6 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Pipeline data (contains AWS account IDs and generated CSVs)
+data/
