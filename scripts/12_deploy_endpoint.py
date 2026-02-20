@@ -75,13 +75,13 @@ def main() -> None:
         s3.upload_file(str(tar_path), bucket, model_key)
         logger.info("Uploaded model artifact to %s", s3_model_path)
 
-    # 2. Deploy endpoint
-    inference_code = str(PROJECT_ROOT / "sagemaker" / "endpoint" / "inference.py")
-
+    # 2. Deploy endpoint (bundle move_to_happy package via dependencies)
     model = SKLearnModel(
         model_data=s3_model_path,
         role=role_arn,
-        entry_point=inference_code,
+        entry_point="inference.py",
+        source_dir=str(PROJECT_ROOT / "sagemaker" / "endpoint"),
+        dependencies=[str(PROJECT_ROOT / "src" / "move_to_happy")],
         framework_version="1.2-1",
         sagemaker_session=sm_session,
     )
@@ -89,7 +89,7 @@ def main() -> None:
     logger.info("Deploying endpoint: %s", ENDPOINT_NAME)
     model.deploy(
         initial_instance_count=1,
-        instance_type="ml.m5.large",
+        instance_type="ml.t2.medium",
         endpoint_name=ENDPOINT_NAME,
     )
 
