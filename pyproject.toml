@@ -7,7 +7,7 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-dependencies = ["boto3 (>=1.42.51,<2.0.0)", "pandas (>=2.2,<3.0)", "pyathena (>=3.27.2,<4.0.0)", "awswrangler (>=3.15.1,<4.0.0)"]
+dependencies = ["boto3 (>=1.42.51,<2.0.0)", "pandas (>=2.2,<3.0)", "pyathena (>=3.27.2,<4.0.0)", "awswrangler (>=3.15.1,<4.0.0)", "sagemaker (>=2.232,<3.0.0)", "numpy (>=2.0,<3.0)"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -30,6 +30,7 @@ pythonpath = ["src"]
 target-version = "py313"
 line-length = 88
 src = ["src", "tests"]
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = [
