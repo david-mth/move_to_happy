@@ -3,14 +3,9 @@ Create Athena database for MTH LME data.
 Uses PyAthena to execute DDL against Athena, which registers in Glue Data Catalog.
 """
 
-import sys
-from pathlib import Path
-
 import pandas as pd
-from pyathena import connect
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _config import get_session, load_pipeline_config
+from pyathena import connect
 
 DATABASE_NAME = "mth_lme"
 
