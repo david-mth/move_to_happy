@@ -32,3 +32,8 @@ htmlcov/
 
 # Pipeline data (contains AWS account IDs and generated CSVs)
 data/
+
+# Tier 1 cache and output (redundant with data/ but explicit)
+data/cache/
+data/prepared/tier1/
+data/prepared/crosswalks/

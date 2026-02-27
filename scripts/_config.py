@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 
 import boto3
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 PROFILE_NAME = os.environ.get("AWS_PROFILE", "move-to-happy")
 REGION = "us-east-1"
