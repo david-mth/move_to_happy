@@ -4,10 +4,11 @@ Fetches crime statistics from the FBI Crime Data Explorer (CDE) API.
 The CDE API is known to have inconsistent county-level coverage, so
 this script uses a tiered fallback strategy:
 
-  1. County-level NIBRS offense data per state
-  2. State-level crime estimates (applied uniformly to all counties
-     within that state as a fallback)
-  3. Graceful degradation: NULL values for counties with no data
+  1. County-level NIBRS offense data per state (via API)
+  2. State-level crime estimates from the API
+  3. Static state-level rates from the FBI's published "Crime in the
+     United States, 2024" report — used when the API is unavailable
+  4. Graceful degradation: NULL values for counties with no data
 
 All crime rates are normalized to per-100,000 population.
 
@@ -76,7 +77,45 @@ ATHENA_COLUMNS: list[tuple[str, str]] = [
 ]
 
 RATE_LIMIT = 0.5  # Moderate rate limit for FBI API
-YEAR = 2023  # Latest likely available year
+YEAR = 2024  # Latest available year
+
+# ---------------------------------------------------------------------------
+# Static fallback: FBI "Crime in the United States, 2024" (released Summer 2025)
+# Rates are per 100,000 inhabitants.
+# Source: https://cde.ucr.cjis.gov / exiledpolicy.com/state-crime-rates-2024/
+# ---------------------------------------------------------------------------
+_STATIC_STATE_RATES: dict[str, dict[str, float]] = {
+    "01": {  # Alabama
+        "violent_crime_rate": 359.9,
+        "property_crime_rate": 1565.1,
+        "murder_rate": 8.7,
+        "robbery_rate": 34.0,
+        "agg_assault_rate": 291.4,
+        "burglary_rate": 243.5,
+        "larceny_rate": 1148.5,
+        "motor_vehicle_theft_rate": 173.0,
+    },
+    "12": {  # Florida
+        "violent_crime_rate": 267.1,
+        "property_crime_rate": 1420.4,
+        "murder_rate": 3.9,
+        "robbery_rate": 38.2,
+        "agg_assault_rate": 197.1,
+        "burglary_rate": 152.5,
+        "larceny_rate": 1144.9,
+        "motor_vehicle_theft_rate": 123.0,
+    },
+    "13": {  # Georgia
+        "violent_crime_rate": 325.7,
+        "property_crime_rate": 1674.9,
+        "murder_rate": 6.9,
+        "robbery_rate": 40.8,
+        "agg_assault_rate": 245.9,
+        "burglary_rate": 202.8,
+        "larceny_rate": 1247.3,
+        "motor_vehicle_theft_rate": 224.7,
+    },
+}
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +421,6 @@ def main() -> None:
     # Start with county-level data where available
     if county_frames:
         county_crime = pd.concat(county_frames, ignore_index=True)
-        # Deduplicate: keep first occurrence per fips_5digit
         county_crime = county_crime.drop_duplicates(
             subset=["fips_5digit"], keep="first"
         )
@@ -391,15 +429,12 @@ def main() -> None:
         county_crime = pd.DataFrame(columns=["fips_5digit", *RATE_COLUMNS])
         print("  No county-level data available")
 
-    # Build a complete DataFrame for all crosswalk FIPS
     all_fips = crosswalk[["fips_5digit"]].drop_duplicates().copy()
-    # Add state_fips for fallback lookup
     all_fips["state_fips_2"] = all_fips["fips_5digit"].str[:2]
 
-    # Merge county-level data
     crime_df = all_fips.merge(county_crime, on="fips_5digit", how="left")
 
-    # Fill gaps with state-level estimates for states that need fallback
+    # Fill gaps with API state-level estimates
     filled_count = 0
     for state_fips in states_needing_fallback:
         if state_fips not in state_estimates:
@@ -414,10 +449,8 @@ def main() -> None:
         filled_count += mask.sum()
 
     if filled_count > 0:
-        print(f"  Filled {filled_count} counties with state-level estimates")
+        print(f"  Filled {filled_count} counties with API state-level estimates")
 
-    # Also fill any remaining gaps (counties in states where county-level
-    # was partially available) with state-level estimates
     for state_fips, estimates in state_estimates.items():
         mask = (crime_df["state_fips_2"] == state_fips) & (
             crime_df[RATE_COLUMNS].isna().all(axis=1)
@@ -428,6 +461,24 @@ def main() -> None:
                 if estimates.get(col) is not None:
                     crime_df.loc[mask, col] = estimates[col]
             print(f"  Backfilled {gap_count} gap counties in state {state_fips}")
+
+    # Static fallback: fill any remaining gaps with published FBI rates
+    static_filled = 0
+    for state_fips, rates in _STATIC_STATE_RATES.items():
+        mask = (crime_df["state_fips_2"] == state_fips) & (
+            crime_df[RATE_COLUMNS].isna().all(axis=1)
+        )
+        gap = mask.sum()
+        if gap > 0:
+            for col in RATE_COLUMNS:
+                crime_df.loc[mask, col] = rates[col]
+            static_filled += gap
+
+    if static_filled > 0:
+        print(
+            f"  Filled {static_filled} counties with static FBI 2024 "
+            f"published rates (API unavailable)"
+        )
 
     crime_df = crime_df.drop(columns=["state_fips_2"])
 

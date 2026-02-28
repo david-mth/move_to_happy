@@ -1,14 +1,18 @@
 """FCC Broadband Availability data for all MTH community counties.
 
-Attempts to fetch county-level broadband availability metrics from
-the FCC Broadband Data Collection (BDC) API.  Because the FCC data
-format and API endpoints change frequently, this script implements
-a multi-tier fallback strategy:
+Downloads FCC Form 477 county-level tier data (bulk CSV) which contains
+residential fixed Internet connections per 1,000 households by county
+and speed tier.  From this we derive:
 
-  1. Per-county API call to the BDC county summary endpoint
-  2. National summary endpoint (all counties at once)
-  3. Graceful degradation: output CSV with NULLs so the Athena table
-     schema is registered and downstream scripts are unblocked
+  - pct_broadband_25_3:  % of households with >= 25/3 Mbps service
+  - pct_broadband_100_20: % of households with >= 100/20 Mbps service
+  - num_providers:  count of distinct providers in the county
+  - max_download_mbps:  highest advertised download speed in the county
+
+We also download the Form 477 county-level connection data to get
+provider counts.
+
+Data covers through December 2023 (latest available from FCC).
 
 Usage:
     poetry run python scripts/tier1/05_fcc_broadband.py
@@ -17,34 +21,42 @@ Usage:
 from __future__ import annotations
 
 import sys
+import time
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _config import get_session, load_pipeline_config  # noqa: F401
 
 from tier1._helpers import (
+    CACHE_DIR,
+    STATE_FIPS,
     TIER1_DIR,
-    api_get,
     ensure_dirs,
-    load_cached,
     load_crosswalk,
     register_athena_table,
-    save_cache,
     upload_to_s3,
 )
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-PRIMARY_URL = (
-    "https://broadbandmap.fcc.gov/api/pub/map/listAvailability/fixed/county/{fips}"
+TIER_URL = "https://www.fcc.gov/sites/default/files/county_tiers_201406_202312.zip"
+CONN_URL = (
+    "https://www.fcc.gov/sites/default/files/county_connections_200906_202312.zip"
 )
-NATIONAL_URL = "https://broadbandmap.fcc.gov/api/pub/map/summarize/fixed/county/all"
 
-RATE_LIMIT = 0.5  # Be polite to FCC servers
+TARGET_STATES = sorted(STATE_FIPS.values())  # ["01", "12", "13"]
+
+# The tier CSV reports connections per 1,000 households at various speed
+# thresholds.  We want the December 2023 snapshot (latest period).
+TARGET_PERIOD = "202312"
 
 OUTPUT_COLUMNS = [
     "canonical_id",
@@ -71,160 +83,298 @@ BROADBAND_COLS = [
     "max_download_mbps",
 ]
 
+FCC_CACHE = CACHE_DIR / "fcc"
+
 
 # ---------------------------------------------------------------------------
-# Strategy 1: Per-county API
+# Download helpers
 # ---------------------------------------------------------------------------
-def fetch_county_primary(fips: str) -> dict | None:
-    """Fetch broadband summary for one county from the primary BDC API.
+def _build_session() -> requests.Session:
+    """Build a requests session with retries and a browser-like User-Agent."""
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+        }
+    )
+    return session
 
-    Returns a dict with broadband metrics, or None if the endpoint
-    fails or returns an unexpected format.
+
+def _download_zip(url: str, dest: Path, max_attempts: int = 3) -> None:
+    """Download a ZIP file with streaming progress. Skips if cached."""
+    if dest.exists():
+        mb = dest.stat().st_size / (1024 * 1024)
+        print(f"  ZIP already cached ({mb:.1f} MB): {dest.name}")
+        return
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    session = _build_session()
+    partial = dest.with_suffix(".partial")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"  Downloading {url} (attempt {attempt}/{max_attempts}) ...")
+            resp = session.get(
+                url,
+                stream=True,
+                timeout=(30, 600),
+            )
+            resp.raise_for_status()
+
+            total = 0
+            with open(partial, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+                    total += len(chunk)
+                    mb = total / (1024 * 1024)
+                    if int(mb) % 10 == 0 and int(mb) > 0:
+                        print(f"    {mb:.0f} MB ...")
+
+            partial.rename(dest)
+            mb = dest.stat().st_size / (1024 * 1024)
+            print(f"  Download complete: {mb:.1f} MB")
+            return
+
+        except (requests.exceptions.RequestException, OSError) as exc:
+            if partial.exists():
+                partial.unlink()
+            if attempt < max_attempts:
+                wait = 2**attempt
+                print(f"  Download failed: {exc}")
+                print(f"  Retrying in {wait}s ...")
+                time.sleep(wait)
+            else:
+                raise
+
+
+def _read_csv_from_zip(zip_path: Path) -> pd.DataFrame:
+    """Read the first CSV inside a ZIP into a DataFrame."""
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+        if not csv_names:
+            msg = f"No CSV found in {zip_path}"
+            raise FileNotFoundError(msg)
+        name = csv_names[0]
+        print(f"  Reading: {name}")
+        with zf.open(name) as f:
+            return pd.read_csv(BytesIO(f.read()), low_memory=False)
+
+
+# ---------------------------------------------------------------------------
+# Tier data processing
+# ---------------------------------------------------------------------------
+def process_tier_data(df: pd.DataFrame, target_fips: set[str]) -> pd.DataFrame:
+    """Extract broadband penetration metrics from Form 477 tier data.
+
+    The tier CSV has columns like:
+      id, geography_type, state_fips, county_fips, period,
+      ... and per_1000_hh columns at various speed tiers.
+
+    We filter to the latest period, our target counties, and compute
+    the percentage of households at the 25/3 and 100/20 thresholds.
     """
-    cached = load_cached("fcc", f"county_{fips}")
-    if cached is not None:
-        return cached  # type: ignore[return-value]
+    print(f"  Raw tier rows: {len(df):,}")
+    print(f"  Columns: {list(df.columns[:15])} ...")
 
-    url = PRIMARY_URL.format(fips=fips)
-    try:
-        resp = api_get(url, rate_limit=RATE_LIMIT, timeout=30)
-        payload = resp.json()
-    except (requests.exceptions.RequestException, ValueError) as exc:
-        print(f"    Primary API failed for {fips}: {exc}")
-        return None
+    # Normalise column names
+    df.columns = df.columns.str.strip().str.lower()
 
-    # Attempt to extract availability data from the response
-    # The FCC API format is not well-documented; try common structures
-    data = payload if isinstance(payload, dict) else None
-    if data is not None:
-        save_cache("fcc", f"county_{fips}", data)
-    return data
+    # Build a 5-digit FIPS from whatever columns are available
+    df = _ensure_fips(df)
+    if df.empty:
+        cols = ["fips_5digit", "pct_broadband_25_3", "pct_broadband_100_20"]
+        return pd.DataFrame(columns=cols)
+
+    # Filter to our states/counties and latest period
+    df = df[df["fips_5digit"].isin(target_fips)].copy()
+    print(f"  After FIPS filter: {len(df):,}")
+
+    if "period" in df.columns:
+        df["period"] = df["period"].astype(str).str.strip()
+        available = sorted(df["period"].unique())
+        best = TARGET_PERIOD if TARGET_PERIOD in available else available[-1]
+        df = df[df["period"] == best].copy()
+        print(f"  Using period: {best} ({len(df):,} rows)")
+
+    # Look for speed-tier columns — the FCC uses various naming conventions
+    tier_cols = _find_tier_columns(df)
+    if not tier_cols:
+        print("  WARNING: Could not identify speed-tier columns.")
+        cols = ["fips_5digit", "pct_broadband_25_3", "pct_broadband_100_20"]
+        return pd.DataFrame(columns=cols)
+
+    result_rows: list[dict] = []
+    for fips, grp in df.groupby("fips_5digit"):
+        row: dict[str, object] = {"fips_5digit": fips}
+        row["pct_broadband_25_3"] = _pct_at_threshold(grp, tier_cols, 25, 3)
+        row["pct_broadband_100_20"] = _pct_at_threshold(grp, tier_cols, 100, 20)
+        result_rows.append(row)
+
+    return pd.DataFrame(result_rows)
 
 
-def parse_county_response(payload: dict) -> dict[str, float | None]:
-    """Extract broadband metrics from a county API response.
+def _ensure_fips(df: pd.DataFrame) -> pd.DataFrame:
+    """Build a fips_5digit column from available FIPS-like columns."""
+    if "fips_5digit" in df.columns:
+        df["fips_5digit"] = df["fips_5digit"].astype(str).str.zfill(5)
+        return df
 
-    Handles multiple possible response formats since the FCC API
-    changes frequently.  Returns a dict of metric -> value or None.
+    # Try state_fips + county_fips
+    if "state_fips" in df.columns and "county_fips" in df.columns:
+        df["fips_5digit"] = df["state_fips"].astype(str).str.zfill(2) + df[
+            "county_fips"
+        ].astype(str).str.zfill(3)
+        return df
+
+    # Try a single "fips" or "county_code" column
+    for col in ("fips", "county_code", "geoid", "geo_id"):
+        if col in df.columns:
+            df["fips_5digit"] = df[col].astype(str).str.zfill(5)
+            return df
+
+    # Try id column that looks like a FIPS
+    if "id" in df.columns:
+        sample = df["id"].astype(str).iloc[0]
+        if sample.isdigit() and len(sample) <= 5:
+            df["fips_5digit"] = df["id"].astype(str).str.zfill(5)
+            return df
+
+    print("  WARNING: No FIPS column found in tier data.")
+    return df
+
+
+def _find_tier_columns(df: pd.DataFrame) -> list[tuple[str, float, float]]:
+    """Identify speed-tier columns and their down/up thresholds.
+
+    Returns list of (column_name, download_mbps, upload_mbps).
     """
-    result: dict[str, float | None] = {
-        "pct_broadband_25_3": None,
-        "pct_broadband_100_20": None,
-        "num_providers": None,
-        "max_download_mbps": None,
-    }
-
-    # Try common response structures
-    data = payload.get("data", payload)
-    if isinstance(data, list) and len(data) > 0:
-        data = data[0]
-    if not isinstance(data, dict):
-        return result
-
-    # Look for percentage fields under various key names
-    for key in ("pct_25_3", "percent_25_3", "broadband_25_3", "pct_bb_25_3"):
-        if key in data:
-            result["pct_broadband_25_3"] = _safe_float(data[key])
-            break
-
-    for key in ("pct_100_20", "percent_100_20", "broadband_100_20", "pct_bb_100_20"):
-        if key in data:
-            result["pct_broadband_100_20"] = _safe_float(data[key])
-            break
-
-    for key in ("num_providers", "provider_count", "providers"):
-        if key in data:
-            result["num_providers"] = _safe_float(data[key])
-            break
-
-    for key in ("max_download", "max_download_speed", "max_dl_speed", "max_down"):
-        if key in data:
-            result["max_download_mbps"] = _safe_float(data[key])
-            break
-
-    return result
+    tiers: list[tuple[str, float, float]] = []
+    for col in df.columns:
+        c = col.lower()
+        # Pattern: "at_least_25_3" or "over_25_3" or "dl25_ul3"
+        # or "per_1000_25_3" etc.
+        for down, up in [
+            (0.2, 0.2),
+            (4, 1),
+            (10, 1),
+            (25, 3),
+            (50, 5),
+            (100, 10),
+            (100, 20),
+            (250, 25),
+            (1000, 100),
+        ]:
+            down_s = str(int(down)) if down == int(down) else str(down)
+            up_s = str(int(up)) if up == int(up) else str(up)
+            patterns = [
+                f"{down_s}_{up_s}",
+                f"dl{down_s}_ul{up_s}",
+                f"{down_s}mbps_{up_s}mbps",
+            ]
+            if any(p in c for p in patterns):
+                tiers.append((col, down, up))
+                break
+    return tiers
 
 
-def _safe_float(val: object) -> float | None:
-    """Safely convert a value to float, returning None on failure."""
-    if val is None:
+def _pct_at_threshold(
+    grp: pd.DataFrame,
+    tier_cols: list[tuple[str, float, float]],
+    min_down: float,
+    min_up: float,
+) -> float | None:
+    """Get the per-1000-households value at or above a speed threshold.
+
+    The tier data reports connections per 1,000 households, so we
+    divide by 10 to get a percentage.
+    """
+    matching = [(col, d, u) for col, d, u in tier_cols if d >= min_down and u >= min_up]
+    if not matching:
         return None
-    try:
-        return float(val)
-    except (ValueError, TypeError):
+
+    # Use the tier closest to the target threshold
+    matching.sort(key=lambda x: (x[1], x[2]))
+    col = matching[0][0]
+    val = pd.to_numeric(grp[col], errors="coerce").max()
+    if pd.isna(val):
         return None
+    return min(round(float(val) / 10.0, 1), 100.0)
 
 
 # ---------------------------------------------------------------------------
-# Strategy 2: National summary endpoint
+# Connection data processing (for provider counts)
 # ---------------------------------------------------------------------------
-def fetch_national_summary() -> pd.DataFrame | None:
-    """Fetch the national county-level broadband summary.
+def process_connection_data(df: pd.DataFrame, target_fips: set[str]) -> pd.DataFrame:
+    """Extract provider count and max download speed from connection data."""
+    print(f"  Raw connection rows: {len(df):,}")
 
-    Returns a DataFrame indexed by fips_5digit, or None if the
-    endpoint fails.
-    """
-    cached = load_cached("fcc", "national_summary")
-    if cached is not None:
-        if isinstance(cached, list):
-            return _parse_national_data(cached)
-        if isinstance(cached, dict):
-            data = cached.get("data", cached.get("results", []))
-            if isinstance(data, list):
-                return _parse_national_data(data)
-        return None
+    df.columns = df.columns.str.strip().str.lower()
+    df = _ensure_fips(df)
+    if df.empty:
+        cols = ["fips_5digit", "num_providers", "max_download_mbps"]
+        return pd.DataFrame(columns=cols)
 
-    try:
-        resp = api_get(NATIONAL_URL, rate_limit=RATE_LIMIT, timeout=120)
-        payload = resp.json()
-    except (requests.exceptions.RequestException, ValueError) as exc:
-        print(f"  National summary API failed: {exc}")
-        return None
+    df = df[df["fips_5digit"].isin(target_fips)].copy()
+    print(f"  After FIPS filter: {len(df):,}")
 
-    if isinstance(payload, dict):
-        data = payload.get("data", payload.get("results", []))
-    elif isinstance(payload, list):
-        data = payload
-    else:
-        return None
+    if "period" in df.columns:
+        df["period"] = df["period"].astype(str).str.strip()
+        available = sorted(df["period"].unique())
+        best = TARGET_PERIOD if TARGET_PERIOD in available else available[-1]
+        df = df[df["period"] == best].copy()
+        print(f"  Using period: {best} ({len(df):,} rows)")
 
-    save_cache("fcc", "national_summary", payload)
+    # Provider count: look for a providers/num_providers column
+    prov_col = None
+    for c in df.columns:
+        if "provider" in c.lower() and ("num" in c.lower() or "count" in c.lower()):
+            prov_col = c
+            break
 
-    if isinstance(data, list):
-        return _parse_national_data(data)
-    return None
+    # Max download: look for max_download or similar
+    dl_col = None
+    for c in df.columns:
+        cl = c.lower()
+        if ("max" in cl and "down" in cl) or cl == "max_advertised_downstream":
+            dl_col = c
+            break
 
+    # If we can't find specific columns, try to derive from the data
+    result_rows: list[dict] = []
+    for fips, grp in df.groupby("fips_5digit"):
+        row: dict[str, object] = {"fips_5digit": fips}
+        if prov_col:
+            row["num_providers"] = pd.to_numeric(grp[prov_col], errors="coerce").max()
+        else:
+            row["num_providers"] = None
+        if dl_col:
+            row["max_download_mbps"] = pd.to_numeric(grp[dl_col], errors="coerce").max()
+        else:
+            row["max_download_mbps"] = None
+        result_rows.append(row)
 
-def _parse_national_data(records: list) -> pd.DataFrame | None:
-    """Parse national summary records into a DataFrame."""
-    if not records:
-        return None
-
-    rows: list[dict] = []
-    for rec in records:
-        if not isinstance(rec, dict):
-            continue
-        fips = rec.get("geoid", rec.get("fips", rec.get("county_fips")))
-        if fips is None:
-            continue
-        fips = str(fips).zfill(5)
-        parsed = parse_county_response(rec)
-        row: dict = {"fips_5digit": fips, **parsed}
-        rows.append(row)
-
-    if not rows:
-        return None
-
-    return pd.DataFrame(rows)
+    return pd.DataFrame(result_rows)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    """Fetch, process, and store FCC broadband availability data."""
+    """Download, process, and store FCC broadband data for AL/FL/GA."""
     print("=" * 60)
-    print("05_fcc_broadband.py - FCC Broadband Availability")
+    print("05_fcc_broadband.py - FCC Broadband Availability (Bulk Download)")
     print("=" * 60)
 
     ensure_dirs()
@@ -234,86 +384,54 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n[1/5] Loading county FIPS crosswalk ...")
     crosswalk = load_crosswalk()
-    target_fips = sorted(crosswalk["fips_5digit"].unique())
+    target_fips = set(crosswalk["fips_5digit"].unique())
     print(f"  Crosswalk rows: {len(crosswalk)}")
     print(f"  Unique target FIPS: {len(target_fips)}")
 
     # ------------------------------------------------------------------
-    # 2. Try Strategy 1: per-county API
+    # 2. Download FCC Form 477 bulk ZIPs
     # ------------------------------------------------------------------
-    print("\n[2/5] Attempting per-county FCC BDC API ...")
-    county_data: dict[str, dict[str, float | None]] = {}
-    strategy_1_failed = False
+    print("\n[2/5] Downloading FCC Form 477 bulk data ...")
+    tier_zip = FCC_CACHE / "county_tiers_201406_202312.zip"
+    conn_zip = FCC_CACHE / "county_connections_200906_202312.zip"
 
-    # Test with first county before doing all
-    test_fips = target_fips[0]
-    test_result = fetch_county_primary(test_fips)
-    if test_result is not None:
-        parsed = parse_county_response(test_result)
-        has_data = any(v is not None for v in parsed.values())
-        if has_data:
-            county_data[test_fips] = parsed
-            print(f"  Primary API works. Fetching {len(target_fips)} counties ...")
+    _download_zip(TIER_URL, tier_zip)
+    _download_zip(CONN_URL, conn_zip)
 
-            for i, fips in enumerate(target_fips[1:], start=2):
-                result = fetch_county_primary(fips)
-                if result is not None:
-                    county_data[fips] = parse_county_response(result)
-                if i % 50 == 0 or i == len(target_fips):
-                    print(
-                        f"    Progress: {i}/{len(target_fips)} counties "
-                        f"({len(county_data)} with data)"
-                    )
-        else:
-            print("  Primary API returned data but no recognized fields.")
-            strategy_1_failed = True
+    # ------------------------------------------------------------------
+    # 3. Process tier data (speed penetration)
+    # ------------------------------------------------------------------
+    print("\n[3/5] Processing tier data (broadband penetration by speed) ...")
+    tier_df = _read_csv_from_zip(tier_zip)
+    tier_result = process_tier_data(tier_df, target_fips)
+    del tier_df  # free memory
+    print(f"  Tier result rows: {len(tier_result)}")
+
+    # ------------------------------------------------------------------
+    # 4. Process connection data (providers, max speed)
+    # ------------------------------------------------------------------
+    print("\n[4/5] Processing connection data (providers, max speed) ...")
+    conn_df = _read_csv_from_zip(conn_zip)
+    conn_result = process_connection_data(conn_df, target_fips)
+    del conn_df
+    print(f"  Connection result rows: {len(conn_result)}")
+
+    # Merge tier + connection results
+    if not tier_result.empty and not conn_result.empty:
+        broadband_df = tier_result.merge(conn_result, on="fips_5digit", how="outer")
+    elif not tier_result.empty:
+        broadband_df = tier_result
+        broadband_df["num_providers"] = None
+        broadband_df["max_download_mbps"] = None
+    elif not conn_result.empty:
+        broadband_df = conn_result
+        broadband_df["pct_broadband_25_3"] = None
+        broadband_df["pct_broadband_100_20"] = None
     else:
-        print("  Primary API failed for test county.")
-        strategy_1_failed = True
-
-    # ------------------------------------------------------------------
-    # 3. Try Strategy 2: national summary (if Strategy 1 failed)
-    # ------------------------------------------------------------------
-    if strategy_1_failed or not county_data:
-        print("\n[3/5] Attempting national summary endpoint ...")
-        national_df = fetch_national_summary()
-        if national_df is not None and not national_df.empty:
-            target_set = set(target_fips)
-            national_df = national_df.loc[national_df["fips_5digit"].isin(target_set)]
-            for _, row in national_df.iterrows():
-                fips = row["fips_5digit"]
-                county_data[fips] = {
-                    "pct_broadband_25_3": row.get("pct_broadband_25_3"),
-                    "pct_broadband_100_20": row.get("pct_broadband_100_20"),
-                    "num_providers": row.get("num_providers"),
-                    "max_download_mbps": row.get("max_download_mbps"),
-                }
-            print(f"  National summary: {len(county_data)} counties matched")
-        else:
-            print("  National summary endpoint also failed.")
-    else:
-        print("\n[3/5] Skipping national summary (primary API succeeded).")
-
-    # ------------------------------------------------------------------
-    # 4. Build output DataFrame
-    # ------------------------------------------------------------------
-    print("\n[4/5] Building output DataFrame ...")
-
-    if county_data:
-        broadband_rows: list[dict] = []
-        for fips, metrics in county_data.items():
-            broadband_rows.append({"fips_5digit": fips, **metrics})
-        broadband_df = pd.DataFrame(broadband_rows)
-    else:
-        print(
-            "  WARNING: No broadband data retrieved from any source.\n"
-            "  Creating output with NULL broadband columns.\n"
-            "  This ensures the Athena table schema is registered for\n"
-            "  future runs when the API becomes available."
-        )
+        print("  WARNING: No broadband data from either source.")
         broadband_df = pd.DataFrame(
             {
-                "fips_5digit": target_fips,
+                "fips_5digit": sorted(target_fips),
                 "pct_broadband_25_3": None,
                 "pct_broadband_100_20": None,
                 "num_providers": None,
@@ -331,7 +449,6 @@ def main() -> None:
     output = merged[OUTPUT_COLUMNS].copy()
     print(f"  Output rows: {len(output)}")
 
-    # Save CSV
     csv_path = TIER1_DIR / "fcc_broadband.csv"
     output.to_csv(csv_path, index=False)
     print(f"  Saved: {csv_path}")
@@ -361,9 +478,9 @@ def main() -> None:
 
     if has_any == 0:
         print(
-            "\n  NOTE: Zero broadband data was retrieved. This is expected if\n"
-            "  the FCC API has changed. The Athena table has been registered\n"
-            "  with the correct schema. Re-run when the API is available."
+            "\n  NOTE: Zero broadband data was retrieved. The FCC bulk data\n"
+            "  format may have changed. Check the CSV column names above\n"
+            "  and update the parsing logic if needed."
         )
 
     print("\nDone.")

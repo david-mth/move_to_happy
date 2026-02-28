@@ -47,7 +47,12 @@ from tier1._helpers import (
 
 CMS_HOSPITAL_CSV_URL = (
     "https://data.cms.gov/provider-data/sites/default/files/resources/"
-    "092256becd267d9dd933f8571064c1f8/Hospital_General_Information.csv"
+    "893c372430d9d71a1c52737d01239d47_1745467507/Hospital_General_Information.csv"
+)
+
+# Stable JSON API endpoint (dataset ID doesn't change when CMS refreshes data)
+CMS_HOSPITAL_API_URL = (
+    "https://data.cms.gov/provider-data/api/1/datastore/query/xubh-q36u/0"
 )
 
 # States to include: our 3 core + border states for edge community coverage
@@ -82,10 +87,49 @@ OUTPUT_COLUMNS = [col for col, _ in ATHENA_COLUMNS]
 # ---------------------------------------------------------------------------
 
 
-def download_hospital_csv() -> pd.DataFrame:
-    """Download CMS Hospital General Information CSV and return raw DataFrame.
+def _download_via_csv() -> pd.DataFrame:
+    """Try the direct CSV download (fast but URL hash changes on refresh)."""
+    print(f"  Downloading CMS hospital CSV from {CMS_HOSPITAL_CSV_URL} …")
+    resp = api_get(CMS_HOSPITAL_CSV_URL, rate_limit=0.0, timeout=120)
+    df = pd.read_csv(io.StringIO(resp.text), dtype=str)
+    df.columns = df.columns.str.strip().str.lower().str.replace(r"\s+", "_", regex=True)
+    return df
 
-    Uses a bulk cache file so subsequent runs skip the ~3 MB download.
+
+def _download_via_api() -> pd.DataFrame:
+    """Fallback: paginate the stable CMS JSON API (dataset ID never changes)."""
+    print("  Falling back to CMS JSON API …")
+    all_rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+    while True:
+        resp = api_get(
+            CMS_HOSPITAL_API_URL,
+            params={"limit": str(page_size), "offset": str(offset)},
+            rate_limit=0.2,
+            timeout=60,
+        )
+        data = resp.json()
+        rows = data.get("results", [])
+        if not rows:
+            break
+        all_rows.extend(rows)
+        total = data.get("count", 0)
+        offset += page_size
+        if offset >= total:
+            break
+    print(f"  Fetched {len(all_rows)} hospitals via API")
+    df = pd.DataFrame(all_rows)
+    df.columns = df.columns.str.strip().str.lower().str.replace(r"\s+", "_", regex=True)
+    return df
+
+
+def download_hospital_csv() -> pd.DataFrame:
+    """Download CMS Hospital General Information and return raw DataFrame.
+
+    Tries the direct CSV first; if CMS has rotated the URL (404), falls back
+    to the stable JSON API which uses a permanent dataset identifier.
+    Uses a bulk cache file so subsequent runs skip the download.
     """
     cache_key = "hospital_data"
     cached = load_cached("cms_hospitals", cache_key)
@@ -93,12 +137,11 @@ def download_hospital_csv() -> pd.DataFrame:
         print(f"  Cache hit: {len(cached)} hospital records")
         return pd.DataFrame(cached)
 
-    print(f"  Downloading CMS hospital CSV from {CMS_HOSPITAL_CSV_URL} …")
-    resp = api_get(CMS_HOSPITAL_CSV_URL, rate_limit=0.0, timeout=120)
-    df = pd.read_csv(io.StringIO(resp.text), dtype=str)
-
-    # Normalise column names: lower-case, replace spaces with underscores
-    df.columns = df.columns.str.strip().str.lower().str.replace(r"\s+", "_", regex=True)
+    try:
+        df = _download_via_csv()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  CSV download failed ({exc}); trying JSON API …")
+        df = _download_via_api()
 
     save_cache("cms_hospitals", cache_key, df.to_dict(orient="records"))
     print(f"  Downloaded and cached: {len(df)} hospitals")
@@ -127,11 +170,11 @@ def parse_hospitals(raw: pd.DataFrame) -> pd.DataFrame:
             col_map[col] = "hospital_type"
         elif "emergency_services" in c:
             col_map[col] = "emergency_services"
-        elif "hospital_overall_rating" in c:
+        elif c == "hospital_overall_rating":
             col_map[col] = "rating_raw"
         elif c in ("address", "address1"):
             col_map[col] = "address"
-        elif c == "city":
+        elif c in ("city", "citytown", "city/town"):
             col_map[col] = "city"
         elif "zip_code" in c or c == "zip":
             col_map[col] = "zip_code"

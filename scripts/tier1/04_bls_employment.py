@@ -47,7 +47,7 @@ COLUMN_MAP: dict[str, str] = {
     "area_fips": "fips_5digit",
     "annual_avg_emplvl": "annual_avg_employment",
     "annual_avg_estabs": "annual_avg_establishments",
-    "avg_wkly_wage": "avg_weekly_wage",
+    "annual_avg_wkly_wage": "avg_weekly_wage",
     "avg_annual_pay": "avg_annual_salary",
     "total_annual_wages": "total_annual_wages",
 }
