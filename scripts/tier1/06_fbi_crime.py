@@ -1,14 +1,20 @@
 """FBI Crime Data Explorer — crime rates for all MTH community counties.
 
 Fetches crime statistics from the FBI Crime Data Explorer (CDE) API.
-The CDE API is known to have inconsistent county-level coverage, so
-this script uses a tiered fallback strategy:
+The CDE API is known to have inconsistent availability, so this script
+uses a tiered fallback strategy:
 
-  1. County-level NIBRS offense data per state (via API)
-  2. State-level crime estimates from the API
-  3. Static state-level rates from the FBI's published "Crime in the
-     United States, 2024" report — used when the API is unavailable
-  4. Graceful degradation: NULL values for counties with no data
+  1. Static state-level rates from the FBI's published "Crime in the
+     United States, 2024" report — always available, used as baseline
+  2. County-level NIBRS offense data per state (via API) — used to
+     upgrade from state-level to county-level granularity when available
+  3. State-level crime estimates from the API — used to get fresher
+     numbers than the static fallback when the API is reachable
+  4. Graceful degradation: static rates guarantee 100% coverage even
+     when the API is completely down (403/503 errors are common)
+
+The FBI CDE API migrated from /sapi to /cde in 2025.  Both base URLs
+are attempted.
 
 All crime rates are normalized to per-100,000 population.
 
@@ -43,7 +49,10 @@ from tier1._helpers import (
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-BASE_URL = "https://api.usa.gov/crime/fbi/sapi"
+BASE_URLS = [
+    "https://api.usa.gov/crime/fbi/cde",
+    "https://api.usa.gov/crime/fbi/sapi",
+]
 
 # State FIPS -> two-letter abbreviation (for FBI API paths)
 STATE_ABBREV: dict[str, str] = {
@@ -77,7 +86,7 @@ ATHENA_COLUMNS: list[tuple[str, str]] = [
 ]
 
 RATE_LIMIT = 0.5  # Moderate rate limit for FBI API
-YEAR = 2024  # Latest available year
+YEAR = 2023  # Latest year with reliable data (2024 may not be fully available)
 
 # ---------------------------------------------------------------------------
 # Static fallback: FBI "Crime in the United States, 2024" (released Summer 2025)
@@ -129,6 +138,7 @@ def _fbi_get(
 ) -> dict | list | None:
     """Call the FBI CDE API with caching and error handling.
 
+    Tries each base URL in BASE_URLS until one succeeds.
     Returns the parsed JSON response, or None on failure.
     """
     cached = load_cached(cache_source, cache_key)
@@ -136,18 +146,20 @@ def _fbi_get(
         print(f"    Cache hit: {cache_key}")
         return cached
 
-    url = f"{BASE_URL}{endpoint}"
     params = {"API_KEY": api_key}
 
-    try:
-        resp = api_get(url, params=params, rate_limit=RATE_LIMIT, timeout=30)
-        payload = resp.json()
-    except Exception as exc:  # noqa: BLE001
-        print(f"    FBI API error ({endpoint}): {exc}")
-        return None
+    for base_url in BASE_URLS:
+        url = f"{base_url}{endpoint}"
+        try:
+            resp = api_get(url, params=params, rate_limit=RATE_LIMIT, timeout=30)
+            payload = resp.json()
+            save_cache(cache_source, cache_key, payload)
+            return payload
+        except Exception as exc:  # noqa: BLE001
+            print(f"    FBI API error ({base_url}{endpoint}): {exc}")
+            continue
 
-    save_cache(cache_source, cache_key, payload)
-    return payload
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -159,13 +171,22 @@ def fetch_county_data(
 ) -> pd.DataFrame | None:
     """Try to fetch county-level crime data for one state.
 
+    Tries multiple endpoint formats since the FBI API has migrated
+    from /sapi to /cde with different path structures.
+
     Returns a DataFrame with fips_5digit and crime rate columns,
     or None if the endpoint is unavailable.
     """
-    cache_key = f"county_{state_abbr}"
-    endpoint = f"/api/data/nibrs/offense/states/{state_abbr}/county"
-
-    payload = _fbi_get(endpoint, api_key, "fbi", cache_key)
+    for endpoint in [
+        f"/summarized/state/{state_abbr}/county/all/{YEAR}/{YEAR}",
+        f"/api/data/nibrs/offense/states/{state_abbr}/county",
+    ]:
+        cache_key = f"county_{state_abbr}_{endpoint.split('/')[1]}"
+        payload = _fbi_get(endpoint, api_key, "fbi", cache_key)
+        if payload is not None:
+            break
+    else:
+        payload = None
     if payload is None:
         return None
 
@@ -235,13 +256,25 @@ def fetch_state_estimates(
 ) -> dict[str, float | None] | None:
     """Fetch state-level crime estimates for a given year.
 
+    Tries multiple endpoint formats since the FBI API has migrated
+    from /sapi to /cde with different path structures.
+
     Returns a dict of crime rate columns -> values (per 100k), or
     None if the endpoint is unavailable.
     """
     cache_key = f"state_{state_abbr}"
-    endpoint = f"/api/estimates/states/{state_abbr}/{YEAR}"
 
-    payload = _fbi_get(endpoint, api_key, "fbi", cache_key)
+    # Try CDE-style endpoint first, then legacy SAPI-style
+    for endpoint in [
+        f"/estimate/state/{state_abbr}/{YEAR}",
+        f"/api/estimates/states/{state_abbr}/{YEAR}",
+    ]:
+        tag = endpoint.split("/")[1]
+        payload = _fbi_get(endpoint, api_key, "fbi", f"{cache_key}_{tag}")
+        if payload is not None:
+            break
+    else:
+        payload = None
     if payload is None:
         return None
 
@@ -378,114 +411,94 @@ def main() -> None:
     print(f"  Unique FIPS: {crosswalk['fips_5digit'].nunique()}")
 
     # ------------------------------------------------------------------
-    # 2. Try county-level data first, then fall back to state-level
+    # 2. Apply static baseline (guarantees 100% coverage)
     # ------------------------------------------------------------------
-    print("\n[2/5] Fetching FBI crime data ...")
+    print("\n[2/5] Applying static FBI 2024 published rates as baseline ...")
+
+    all_fips = crosswalk[["fips_5digit"]].drop_duplicates().copy()
+    all_fips["state_fips_2"] = all_fips["fips_5digit"].str[:2]
+
+    crime_df = all_fips.copy()
+    for col in RATE_COLUMNS:
+        crime_df[col] = np.nan
+
+    static_filled = 0
+    for state_fips, rates in _STATIC_STATE_RATES.items():
+        mask = crime_df["state_fips_2"] == state_fips
+        count = mask.sum()
+        if count > 0:
+            for col in RATE_COLUMNS:
+                crime_df.loc[mask, col] = rates[col]
+            static_filled += count
+
+    print(f"  Baseline applied to {static_filled} counties from published rates")
+
+    # ------------------------------------------------------------------
+    # 3. Try API for county-level upgrades (best-effort)
+    # ------------------------------------------------------------------
+    print("\n[3/5] Attempting FBI API for finer-grained data (best-effort) ...")
 
     county_frames: list[pd.DataFrame] = []
     state_estimates: dict[str, dict[str, float | None]] = {}
-    states_needing_fallback: list[str] = []
 
     for state_fips, state_abbr in sorted(STATE_ABBREV.items()):
         state_name = {v: k for k, v in STATE_FIPS.items()}.get(state_fips, state_abbr)
         print(f"\n  {state_name} ({state_abbr}):")
 
-        # Strategy 1: county-level
-        print("    Trying county-level NIBRS data ...")
+        print("    Trying county-level data ...")
         county_df = fetch_county_data(state_abbr, api_key)
         if county_df is not None and not county_df.empty:
             print(f"    County-level: {len(county_df)} counties found")
             county_frames.append(county_df)
         else:
             print(f"    County-level data unavailable for {state_abbr}")
-            states_needing_fallback.append(state_fips)
 
-        # Strategy 2: state-level estimates (fetch regardless as backup)
-        print("    Fetching state-level estimates ...")
+        print("    Trying state-level estimates ...")
         estimates = fetch_state_estimates(state_abbr, api_key)
         if estimates is not None:
             has_data = any(v is not None for v in estimates.values())
             if has_data:
                 state_estimates[state_fips] = estimates
-                print("    State-level estimates available")
+                print("    State-level API estimates available")
             else:
-                print("    State-level estimates empty")
+                print("    State-level API estimates empty")
         else:
-            print("    State-level estimates unavailable")
+            print("    State-level API estimates unavailable")
 
-    # ------------------------------------------------------------------
-    # 3. Build county-level crime DataFrame
-    # ------------------------------------------------------------------
-    print("\n[3/5] Building crime rate DataFrame ...")
-
-    # Start with county-level data where available
+    # Overlay county-level data where available (upgrades from state averages)
     if county_frames:
         county_crime = pd.concat(county_frames, ignore_index=True)
         county_crime = county_crime.drop_duplicates(
             subset=["fips_5digit"], keep="first"
         )
-        print(f"  County-level records: {len(county_crime)}")
+        print(f"\n  Overlaying {len(county_crime)} county-level records")
+        for _, row in county_crime.iterrows():
+            fips = row["fips_5digit"]
+            mask = crime_df["fips_5digit"] == fips
+            for col in RATE_COLUMNS:
+                if pd.notna(row.get(col)):
+                    crime_df.loc[mask, col] = row[col]
     else:
-        county_crime = pd.DataFrame(columns=["fips_5digit", *RATE_COLUMNS])
-        print("  No county-level data available")
+        print("\n  No county-level API data available (using static baseline)")
 
-    all_fips = crosswalk[["fips_5digit"]].drop_duplicates().copy()
-    all_fips["state_fips_2"] = all_fips["fips_5digit"].str[:2]
-
-    crime_df = all_fips.merge(county_crime, on="fips_5digit", how="left")
-
-    # Fill gaps with API state-level estimates
-    filled_count = 0
-    for state_fips in states_needing_fallback:
-        if state_fips not in state_estimates:
-            continue
-        estimates = state_estimates[state_fips]
-        mask = (crime_df["state_fips_2"] == state_fips) & (
-            crime_df[RATE_COLUMNS].isna().all(axis=1)
-        )
+    # Overlay API state-level estimates where they provide fresher data
+    api_upgraded = 0
+    for state_fips, estimates in state_estimates.items():
+        mask = crime_df["state_fips_2"] == state_fips
         for col in RATE_COLUMNS:
             if estimates.get(col) is not None:
                 crime_df.loc[mask, col] = estimates[col]
-        filled_count += mask.sum()
+        api_upgraded += mask.sum()
 
-    if filled_count > 0:
-        print(f"  Filled {filled_count} counties with API state-level estimates")
-
-    for state_fips, estimates in state_estimates.items():
-        mask = (crime_df["state_fips_2"] == state_fips) & (
-            crime_df[RATE_COLUMNS].isna().all(axis=1)
-        )
-        gap_count = mask.sum()
-        if gap_count > 0:
-            for col in RATE_COLUMNS:
-                if estimates.get(col) is not None:
-                    crime_df.loc[mask, col] = estimates[col]
-            print(f"  Backfilled {gap_count} gap counties in state {state_fips}")
-
-    # Static fallback: fill any remaining gaps with published FBI rates
-    static_filled = 0
-    for state_fips, rates in _STATIC_STATE_RATES.items():
-        mask = (crime_df["state_fips_2"] == state_fips) & (
-            crime_df[RATE_COLUMNS].isna().all(axis=1)
-        )
-        gap = mask.sum()
-        if gap > 0:
-            for col in RATE_COLUMNS:
-                crime_df.loc[mask, col] = rates[col]
-            static_filled += gap
-
-    if static_filled > 0:
-        print(
-            f"  Filled {static_filled} counties with static FBI 2024 "
-            f"published rates (API unavailable)"
-        )
+    if api_upgraded > 0:
+        print(f"  Upgraded {api_upgraded} counties with API state-level estimates")
 
     crime_df = crime_df.drop(columns=["state_fips_2"])
 
     # ------------------------------------------------------------------
     # 4. Join crosswalk -> canonical_id
     # ------------------------------------------------------------------
-    print("\n[4/5] Joining with crosswalk ...")
+    print("\n[4/5] Joining with crosswalk (all counties guaranteed) ...")
     merged = crosswalk[["canonical_id", "fips_5digit"]].merge(
         crime_df,
         on="fips_5digit",

@@ -12,7 +12,7 @@ and speed tier.  From this we derive:
 We also download the Form 477 county-level connection data to get
 provider counts.
 
-Data covers through December 2023 (latest available from FCC).
+Data covers through June 2024 (latest available from FCC, posted May 2025).
 
 Usage:
     poetry run python scripts/tier1/05_fcc_broadband.py
@@ -47,16 +47,16 @@ from tier1._helpers import (
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-TIER_URL = "https://www.fcc.gov/sites/default/files/county_tiers_201406_202312.zip"
+TIER_URL = "https://www.fcc.gov/sites/default/files/county_tiers_201406_202406.zip"
 CONN_URL = (
-    "https://www.fcc.gov/sites/default/files/county_connections_200906_202312.zip"
+    "https://www.fcc.gov/sites/default/files/county_connections_200906_202406.zip"
 )
 
 TARGET_STATES = sorted(STATE_FIPS.values())  # ["01", "12", "13"]
 
 # The tier CSV reports connections per 1,000 households at various speed
-# thresholds.  We want the December 2023 snapshot (latest period).
-TARGET_PERIOD = "202312"
+# thresholds.  We want the June 2024 snapshot (latest period).
+TARGET_PERIOD = "202406"
 
 OUTPUT_COLUMNS = [
     "canonical_id",
@@ -112,7 +112,7 @@ def _build_session() -> requests.Session:
     return session
 
 
-def _download_zip(url: str, dest: Path, max_attempts: int = 3) -> None:
+def _download_zip(url: str, dest: Path, max_attempts: int = 5) -> None:
     """Download a ZIP file with streaming progress. Skips if cached."""
     if dest.exists():
         mb = dest.stat().st_size / (1024 * 1024)
@@ -129,7 +129,7 @@ def _download_zip(url: str, dest: Path, max_attempts: int = 3) -> None:
             resp = session.get(
                 url,
                 stream=True,
-                timeout=(30, 600),
+                timeout=(60, 1800),
             )
             resp.raise_for_status()
 
@@ -392,8 +392,8 @@ def main() -> None:
     # 2. Download FCC Form 477 bulk ZIPs
     # ------------------------------------------------------------------
     print("\n[2/5] Downloading FCC Form 477 bulk data ...")
-    tier_zip = FCC_CACHE / "county_tiers_201406_202312.zip"
-    conn_zip = FCC_CACHE / "county_connections_200906_202312.zip"
+    tier_zip = FCC_CACHE / "county_tiers_201406_202406.zip"
+    conn_zip = FCC_CACHE / "county_connections_200906_202406.zip"
 
     _download_zip(TIER_URL, tier_zip)
     _download_zip(CONN_URL, conn_zip)
