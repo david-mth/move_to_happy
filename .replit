@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 modules = ["python-base-3.13"]
 [agent]
 expertMode = true
@@ -27,3 +28,13 @@ args = "poetry run pytest tests/ -v"
 
 [workflows.workflow.metadata]
 outputType = "console"
+=======
+run = "cd app && bash run.sh"
+entrypoint = "app/run.sh"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["bash", "-c", "cd app && bash run.sh"]
+>>>>>>> c1c7b1f5a25ac6daed51a8ce63f437226e421561
