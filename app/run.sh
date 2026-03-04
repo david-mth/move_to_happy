@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 set -e
 
-# Install Python deps
-pip install -q -r backend/requirements.txt
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VENV="$PROJECT_ROOT/.venv/bin"
+GCC_LIB="$(gcc -print-file-name=libstdc++.so.6 | xargs dirname)"
 
-# Download data from S3 (requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
-python backend/sync_data.py
+cd "$SCRIPT_DIR"
 
-# Install Node deps & build frontend
+LD_LIBRARY_PATH="$GCC_LIB" "$VENV/python" backend/sync_data.py || true
+
 cd frontend
 npm install --silent
 npm run build
 cd ..
 
-# Serve the built frontend from FastAPI as static files
-# Copy build output next to the backend so uvicorn can serve it
-cp -r frontend/dist backend/static 2>/dev/null || true
+rm -rf backend/static
+cp -r frontend/dist backend/static
 
-# Start the API server (serves both API and static frontend)
 cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+LD_LIBRARY_PATH="$GCC_LIB" "$VENV/uvicorn" main:app --host 0.0.0.0 --port 5000

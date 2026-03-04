@@ -58,21 +58,30 @@ data_chat: Any = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     global engine, data_chat
-    df = pd.read_csv(DATA_DIR / "mth_communities.csv")
-    engine = LMEEngine(df)
-    enrichment.load()
+    community_csv = DATA_DIR / "mth_communities.csv"
+    if community_csv.exists():
+        df = pd.read_csv(community_csv)
+        engine = LMEEngine(df)
+        enrichment.load()
 
-    for name, rel_path in DATAFRAME_NAMES.items():
-        csv_path = DATA_DIR / rel_path
-        if csv_path.exists():
-            chat_dataframes[name] = pd.read_csv(csv_path)
+        for name, rel_path in DATAFRAME_NAMES.items():
+            csv_path = DATA_DIR / rel_path
+            if csv_path.exists():
+                chat_dataframes[name] = pd.read_csv(csv_path)
 
-    try:
-        from chat import DataChat  # noqa: E402
+        try:
+            from chat import DataChat  # noqa: E402
 
-        data_chat = DataChat(chat_dataframes)
-    except (ImportError, ValueError):
-        data_chat = None
+            data_chat = DataChat(chat_dataframes)
+        except (ImportError, ValueError):
+            data_chat = None
+    else:
+        import logging
+        logging.warning(
+            "Community data not found at %s. "
+            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to sync data from S3.",
+            community_csv,
+        )
 
     yield
 
