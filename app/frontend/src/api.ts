@@ -3,7 +3,9 @@ import type {
   ChatStatus,
   DatasetInfo,
   DatasetPage,
+  EDACorrelationMatrix,
   EDADataset,
+  EDASummary,
   Metadata,
   ScoreRequest,
   ScoreResponse,
@@ -73,10 +75,29 @@ export async function fetchEDAColumns(): Promise<EDADataset[]> {
 export async function fetchEDAData(
   dataset: string,
   columns: string[],
+  state?: string,
 ): Promise<{ name: string; columns: string[]; rows: Record<string, unknown>[] }> {
-  const res = await fetch(
-    `${BASE}/eda/data/${dataset}?columns=${columns.join(",")}`,
-  );
+  let url = `${BASE}/eda/data/${dataset}?columns=${columns.join(",")}`;
+  if (state && state !== "All") url += `&state=${encodeURIComponent(state)}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`EDA data failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEDASummary(
+  state: string = "All",
+): Promise<EDASummary> {
+  const res = await fetch(`${BASE}/eda/summary?state=${encodeURIComponent(state)}`);
+  if (!res.ok) throw new Error(`EDA summary failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEDACorrelations(
+  columns?: string[],
+): Promise<EDACorrelationMatrix> {
+  let url = `${BASE}/eda/correlations`;
+  if (columns?.length) url += `?columns=${columns.join(",")}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`EDA correlations failed: ${res.status}`);
   return res.json();
 }

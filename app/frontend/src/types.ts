@@ -147,6 +147,40 @@ export interface EDADataset {
   categorical_columns: EDACategoricalColumn[];
 }
 
+export interface EDAKPIs {
+  total_communities: number;
+  median_home_value: number | null;
+  median_income: number | null;
+  avg_violent_crime_rate: number | null;
+  avg_broadband_pct: number | null;
+  avg_property_tax_rate: number | null;
+}
+
+export interface CommunityIndex {
+  canonical_id: string;
+  city_state: string;
+  state_name: string;
+  latitude: number;
+  longitude: number;
+  population: number;
+  affordability: number | null;
+  safety: number | null;
+  healthcare: number | null;
+  education: number | null;
+  digital: number | null;
+  environmental: number | null;
+}
+
+export interface EDASummary {
+  kpis: EDAKPIs;
+  indices: CommunityIndex[];
+}
+
+export interface EDACorrelationMatrix {
+  columns: string[];
+  matrix: Record<string, unknown>[];
+}
+
 export const DEFAULT_PREFS: ScoreRequest = {
   monthly_payment: 2500,
   loan_term_years: 30,

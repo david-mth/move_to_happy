@@ -12,6 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -296,11 +297,13 @@ async def eda_columns():
 
 
 @app.get("/api/eda/data/{dataset_name}")
-async def eda_data(dataset_name: str, columns: str = ""):
+async def eda_data(dataset_name: str, columns: str = "", state: str = ""):
     """Return specific columns from a dataset for EDA charts."""
     if dataset_name not in chat_dataframes:
         return {"error": "Dataset not found"}
     df = chat_dataframes[dataset_name]
+    if state and state != "All" and "state_name" in df.columns:
+        df = df[df["state_name"] == state]
     if columns:
         cols = [c.strip() for c in columns.split(",") if c.strip() in df.columns]
     else:
@@ -313,6 +316,251 @@ async def eda_data(dataset_name: str, columns: str = ""):
         for row in subset.to_dict(orient="records")
     ]
     return {"name": dataset_name, "columns": cols, "rows": records}
+
+
+def _percentile_rank(series: pd.Series, invert: bool = False) -> pd.Series:
+    """Convert a series to 0-100 percentile ranks. NaN stays NaN."""
+    ranked = series.rank(pct=True, na_option="keep") * 100
+    if invert:
+        ranked = 100 - ranked
+    return ranked
+
+
+def _build_merged_df() -> pd.DataFrame:
+    """Merge all datasets on canonical_id for composite index computation."""
+    comm = chat_dataframes.get("communities")
+    if comm is None:
+        return pd.DataFrame()
+    base = comm[
+        [
+            "canonical_id",
+            "city_state",
+            "state_name",
+            "latitude",
+            "longitude",
+            "population",
+            "cost_of_living",
+        ]
+    ].copy()
+    join_map = {
+        "census": ["median_home_value", "median_household_income"],
+        "crime": ["violent_crime_rate", "property_crime_rate"],
+        "hospitals": [
+            "nearest_hospital_miles",
+            "hospitals_within_30mi",
+            "avg_rating_within_30mi",
+        ],
+        "physicians": ["providers_per_1000_pop"],
+        "education": [
+            "hs_graduation_rate",
+            "postsecondary_completion_rate",
+            "median_earnings",
+        ],
+        "broadband": ["pct_broadband_100_20", "num_providers", "max_download_mbps"],
+        "air_quality": ["pm25_mean", "ozone_mean"],
+        "tax_rates": [
+            "effective_property_tax_rate",
+            "combined_sales_tax_rate",
+        ],
+        "employment": ["avg_annual_salary", "annual_avg_employment"],
+    }
+    for ds_name, cols in join_map.items():
+        ds = chat_dataframes.get(ds_name)
+        if ds is None:
+            continue
+        available = [c for c in cols if c in ds.columns]
+        if not available or "canonical_id" not in ds.columns:
+            continue
+        base = base.merge(
+            ds[["canonical_id"] + available],
+            on="canonical_id",
+            how="left",
+        )
+    return base
+
+
+@app.get("/api/eda/summary")
+async def eda_summary(state: str = "All"):
+    """Return KPIs and composite livability indices for all communities."""
+    merged = _build_merged_df()
+    if merged.empty:
+        return {"kpis": {}, "indices": []}
+
+    if state and state != "All":
+        filtered = merged[merged["state_name"] == state]
+    else:
+        filtered = merged
+
+    def _safe_median(col: str) -> float | None:
+        if col not in filtered.columns:
+            return None
+        v = filtered[col].dropna()
+        return round(float(v.median()), 2) if len(v) else None
+
+    def _safe_mean(col: str) -> float | None:
+        if col not in filtered.columns:
+            return None
+        v = filtered[col].dropna()
+        return round(float(v.mean()), 2) if len(v) else None
+
+    kpis = {
+        "total_communities": len(filtered),
+        "median_home_value": _safe_median("median_home_value"),
+        "median_income": _safe_median("median_household_income"),
+        "avg_violent_crime_rate": _safe_mean("violent_crime_rate"),
+        "avg_broadband_pct": _safe_mean("pct_broadband_100_20"),
+        "avg_property_tax_rate": _safe_mean("effective_property_tax_rate"),
+    }
+
+    idx = merged.copy()
+
+    aff_cols = []
+    if "cost_of_living" in idx.columns:
+        idx["_aff_col"] = _percentile_rank(idx["cost_of_living"], invert=True)
+        aff_cols.append("_aff_col")
+    if "median_home_value" in idx.columns:
+        idx["_aff_hv"] = _percentile_rank(idx["median_home_value"], invert=True)
+        aff_cols.append("_aff_hv")
+    if "effective_property_tax_rate" in idx.columns:
+        idx["_aff_pt"] = _percentile_rank(
+            idx["effective_property_tax_rate"],
+            invert=True,
+        )
+        aff_cols.append("_aff_pt")
+    if "combined_sales_tax_rate" in idx.columns:
+        idx["_aff_st"] = _percentile_rank(
+            idx["combined_sales_tax_rate"],
+            invert=True,
+        )
+        aff_cols.append("_aff_st")
+    idx["affordability"] = idx[aff_cols].mean(axis=1).round(1) if aff_cols else np.nan
+
+    safety_cols = []
+    if "violent_crime_rate" in idx.columns:
+        idx["_saf_v"] = _percentile_rank(idx["violent_crime_rate"], invert=True)
+        safety_cols.append("_saf_v")
+    if "property_crime_rate" in idx.columns:
+        idx["_saf_p"] = _percentile_rank(idx["property_crime_rate"], invert=True)
+        safety_cols.append("_saf_p")
+    idx["safety"] = idx[safety_cols].mean(axis=1).round(1) if safety_cols else np.nan
+
+    hc_cols = []
+    if "nearest_hospital_miles" in idx.columns:
+        idx["_hc_dist"] = _percentile_rank(
+            idx["nearest_hospital_miles"],
+            invert=True,
+        )
+        hc_cols.append("_hc_dist")
+    if "hospitals_within_30mi" in idx.columns:
+        idx["_hc_cnt"] = _percentile_rank(idx["hospitals_within_30mi"])
+        hc_cols.append("_hc_cnt")
+    if "providers_per_1000_pop" in idx.columns:
+        idx["_hc_prov"] = _percentile_rank(idx["providers_per_1000_pop"])
+        hc_cols.append("_hc_prov")
+    if "avg_rating_within_30mi" in idx.columns:
+        idx["_hc_rat"] = _percentile_rank(idx["avg_rating_within_30mi"])
+        hc_cols.append("_hc_rat")
+    idx["healthcare"] = idx[hc_cols].mean(axis=1).round(1) if hc_cols else np.nan
+
+    edu_cols = []
+    if "hs_graduation_rate" in idx.columns:
+        idx["_edu_hs"] = _percentile_rank(idx["hs_graduation_rate"])
+        edu_cols.append("_edu_hs")
+    if "postsecondary_completion_rate" in idx.columns:
+        idx["_edu_ps"] = _percentile_rank(idx["postsecondary_completion_rate"])
+        edu_cols.append("_edu_ps")
+    if "median_earnings" in idx.columns:
+        idx["_edu_earn"] = _percentile_rank(idx["median_earnings"])
+        edu_cols.append("_edu_earn")
+    idx["education"] = idx[edu_cols].mean(axis=1).round(1) if edu_cols else np.nan
+
+    dig_cols = []
+    if "pct_broadband_100_20" in idx.columns:
+        idx["_dig_bb"] = _percentile_rank(idx["pct_broadband_100_20"])
+        dig_cols.append("_dig_bb")
+    if "num_providers" in idx.columns:
+        idx["_dig_np"] = _percentile_rank(idx["num_providers"])
+        dig_cols.append("_dig_np")
+    if "max_download_mbps" in idx.columns:
+        idx["_dig_dl"] = _percentile_rank(idx["max_download_mbps"])
+        dig_cols.append("_dig_dl")
+    idx["digital"] = idx[dig_cols].mean(axis=1).round(1) if dig_cols else np.nan
+
+    env_cols = []
+    if "pm25_mean" in idx.columns:
+        idx["_env_pm"] = _percentile_rank(idx["pm25_mean"], invert=True)
+        env_cols.append("_env_pm")
+    if "ozone_mean" in idx.columns:
+        idx["_env_oz"] = _percentile_rank(idx["ozone_mean"], invert=True)
+        env_cols.append("_env_oz")
+    idx["environmental"] = idx[env_cols].mean(axis=1).round(1) if env_cols else np.nan
+
+    out_cols = [
+        "canonical_id",
+        "city_state",
+        "state_name",
+        "latitude",
+        "longitude",
+        "population",
+        "affordability",
+        "safety",
+        "healthcare",
+        "education",
+        "digital",
+        "environmental",
+    ]
+    result = idx[[c for c in out_cols if c in idx.columns]].copy()
+    records = [
+        {
+            k: (None if pd.isna(v) else round(v, 2) if isinstance(v, float) else v)
+            for k, v in row.items()
+        }
+        for row in result.to_dict(orient="records")
+    ]
+    return {"kpis": kpis, "indices": records}
+
+
+@app.get("/api/eda/correlations")
+async def eda_correlations(columns: str = ""):
+    """Return pairwise Pearson correlation matrix for selected columns."""
+    merged = _build_merged_df()
+    if merged.empty:
+        return {"columns": [], "matrix": []}
+
+    default_cols = [
+        "population",
+        "cost_of_living",
+        "median_home_value",
+        "median_household_income",
+        "violent_crime_rate",
+        "property_crime_rate",
+        "pct_broadband_100_20",
+        "pm25_mean",
+        "avg_annual_salary",
+        "nearest_hospital_miles",
+        "providers_per_1000_pop",
+        "hs_graduation_rate",
+        "effective_property_tax_rate",
+        "combined_sales_tax_rate",
+    ]
+    if columns:
+        col_list = [c.strip() for c in columns.split(",") if c.strip()]
+    else:
+        col_list = default_cols
+
+    available = [c for c in col_list if c in merged.columns]
+    if len(available) < 2:
+        return {"columns": available, "matrix": []}
+
+    corr = merged[available].corr(numeric_only=True)
+    matrix = []
+    for row_name in corr.index:
+        row_vals = {}
+        for col_name in corr.columns:
+            v = corr.loc[row_name, col_name]
+            row_vals[col_name] = round(float(v), 4) if not pd.isna(v) else None
+        matrix.append({"column": row_name, **row_vals})
+    return {"columns": list(corr.columns), "matrix": matrix}
 
 
 @app.get("/api/metadata")

@@ -1,61 +1,61 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchEDAColumns, fetchEDAData } from "../api";
-import type { EDADataset } from "../types";
-import { DistributionChart } from "./eda/DistributionChart";
-import { GeoHeatmap } from "./eda/GeoHeatmap";
-import { RankingTable } from "./eda/RankingTable";
-import { ScatterPlot } from "./eda/ScatterPlot";
-import { StateComparison } from "./eda/StateComparison";
+import { fetchEDAColumns, fetchEDAData, fetchEDASummary } from "../api";
+import type { CommunityIndex, EDADataset, EDAKPIs } from "../types";
+import { CommunityOverview } from "./eda/CommunityOverview";
+import { CorrelationExplorer } from "./eda/CorrelationExplorer";
+import { EconomicTax } from "./eda/EconomicTax";
+import { KPIStrip } from "./eda/KPIStrip";
+import { LivabilityIndex } from "./eda/LivabilityIndex";
+import { SafetyHealth } from "./eda/SafetyHealth";
 
 type Row = Record<string, unknown>;
 
-interface PanelProps {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}
+const TABS = [
+  { id: "overview", label: "Community Overview" },
+  { id: "livability", label: "Livability Index" },
+  { id: "economic", label: "Economic & Tax" },
+  { id: "safety", label: "Safety & Health" },
+  { id: "correlation", label: "Correlation Explorer" },
+] as const;
 
-function Panel({ title, defaultOpen = false, children }: PanelProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className={`eda-panel ${open ? "open" : ""}`}>
-      <button className="eda-panel-header" onClick={() => setOpen(!open)}>
-        <span className="eda-panel-title">{title}</span>
-        <span className="eda-panel-chevron">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && <div className="eda-panel-body">{children}</div>}
-    </div>
-  );
-}
+type TabId = (typeof TABS)[number]["id"];
 
 export function EDAPage() {
+  const [tab, setTab] = useState<TabId>("overview");
+  const [stateFilter, setStateFilter] = useState("All");
+  const [kpis, setKpis] = useState<EDAKPIs | null>(null);
+  const [indices, setIndices] = useState<CommunityIndex[]>([]);
   const [datasets, setDatasets] = useState<EDADataset[]>([]);
-  const [stateFilter, setStateFilter] = useState<string>("All");
   const [dataCache, setDataCache] = useState<Record<string, Row[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchEDAColumns()
-      .then(setDatasets)
+    setLoading(true);
+    Promise.all([fetchEDASummary(stateFilter), fetchEDAColumns()])
+      .then(([summary, ds]) => {
+        setKpis(summary.kpis);
+        setIndices(summary.indices);
+        setDatasets(ds);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [stateFilter]);
 
   const loadData = useCallback(
     async (dataset: string, columns: string[]): Promise<Row[]> => {
-      const key = `${dataset}:${columns.sort().join(",")}`;
+      const key = `${dataset}:${[...columns].sort().join(",")}:${stateFilter}`;
       if (dataCache[key]) return dataCache[key];
-      const result = await fetchEDAData(dataset, columns);
+      const result = await fetchEDAData(dataset, columns, stateFilter);
       setDataCache((prev) => ({ ...prev, [key]: result.rows }));
       return result.rows;
     },
-    [dataCache],
+    [dataCache, stateFilter],
   );
 
   if (loading) {
     return (
       <div className="eda-page">
-        <div className="eda-loading">Loading datasets...</div>
+        <div className="eda-loading">Loading analytics...</div>
       </div>
     );
   }
@@ -64,9 +64,9 @@ export function EDAPage() {
     <div className="eda-page">
       <div className="eda-header">
         <div>
-          <h2>Exploratory Data Analysis</h2>
+          <h2>Advanced Analytics</h2>
           <p className="eda-subtitle">
-            {datasets.length} datasets across ~1,305 communities
+            Cross-dataset insights across {kpis?.total_communities ?? "~1,305"} communities
           </p>
         </div>
         <div className="eda-state-filter">
@@ -74,7 +74,10 @@ export function EDAPage() {
             <button
               key={s}
               className={`eda-state-btn ${stateFilter === s ? "active" : ""}`}
-              onClick={() => setStateFilter(s)}
+              onClick={() => {
+                setStateFilter(s);
+                setDataCache({});
+              }}
             >
               {s}
             </button>
@@ -82,45 +85,46 @@ export function EDAPage() {
         </div>
       </div>
 
-      <div className="eda-panels">
-        <Panel title="Distribution Explorer" defaultOpen>
-          <DistributionChart
+      {kpis && <KPIStrip kpis={kpis} />}
+
+      <div className="eda-tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={`eda-tab ${tab === t.id ? "active" : ""}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="eda-tab-content">
+        {tab === "overview" && (
+          <CommunityOverview
+            indices={indices}
+            stateFilter={stateFilter}
+          />
+        )}
+        {tab === "livability" && (
+          <LivabilityIndex
+            indices={indices}
+            stateFilter={stateFilter}
+          />
+        )}
+        {tab === "economic" && (
+          <EconomicTax
             datasets={datasets}
             stateFilter={stateFilter}
             loadData={loadData}
           />
-        </Panel>
-
-        <Panel title="Scatter Plot / Correlation">
-          <ScatterPlot
-            datasets={datasets}
-            stateFilter={stateFilter}
-            loadData={loadData}
-          />
-        </Panel>
-
-        <Panel title="State Comparison">
-          <StateComparison
-            datasets={datasets}
-            loadData={loadData}
-          />
-        </Panel>
-
-        <Panel title="Geographic Heatmap">
-          <GeoHeatmap
-            datasets={datasets}
-            stateFilter={stateFilter}
-            loadData={loadData}
-          />
-        </Panel>
-
-        <Panel title="Top / Bottom Rankings">
-          <RankingTable
-            datasets={datasets}
-            stateFilter={stateFilter}
-            loadData={loadData}
-          />
-        </Panel>
+        )}
+        {tab === "safety" && (
+          <SafetyHealth loadData={loadData} />
+        )}
+        {tab === "correlation" && (
+          <CorrelationExplorer />
+        )}
       </div>
     </div>
   );

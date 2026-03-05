@@ -994,7 +994,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .eda-header h2 {
@@ -1037,53 +1037,75 @@ body {
   color: #fff;
 }
 
-.eda-panels {
-  display: flex;
-  flex-direction: column;
+/* KPI Strip */
+.eda-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.75rem;
+  margin-bottom: 1rem;
 }
 
-.eda-panel {
+.eda-kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  padding: 0.85rem 1rem;
+  text-align: center;
 }
 
-.eda-panel-header {
+.eda-kpi-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.eda-kpi-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+/* Tabs */
+.eda-tabs {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 0.85rem 1.15rem;
+  gap: 0.2rem;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.2rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.eda-tab {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
   background: none;
   border: none;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 600;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
 
-.eda-panel-header:hover {
-  background: var(--surface-hover);
+.eda-tab:hover {
+  color: var(--text);
 }
 
-.eda-panel-chevron {
-  color: var(--text-muted);
-  font-size: 0.85rem;
+.eda-tab.active {
+  background: var(--accent);
+  color: #fff;
 }
 
-.eda-panel-body {
-  padding: 0 1.15rem 1.15rem;
+.eda-tab-content {
+  min-height: 400px;
 }
 
-.eda-chart-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
+/* Shared EDA Controls */
 .eda-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1110,19 +1132,6 @@ body {
   border-radius: 6px;
   font-size: 0.8rem;
   min-width: 160px;
-}
-
-.eda-controls input[type="range"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-  min-width: 100px;
-}
-
-.eda-value {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .eda-toggle {
@@ -1174,6 +1183,7 @@ body {
   flex-wrap: wrap;
   font-size: 0.78rem;
   color: var(--text-muted);
+  margin-bottom: 0.5rem;
 }
 
 .eda-legend-item {
@@ -1189,39 +1199,116 @@ body {
   display: inline-block;
 }
 
-/* Geo heatmap */
-.eda-geo-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+/* Sections */
+.eda-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  margin-bottom: 1rem;
 }
 
-.eda-geo-svg {
-  width: 100%;
-  max-height: 420px;
+.eda-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.eda-section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.eda-section-header .eda-section-title {
+  margin-bottom: 0;
+}
+
+.eda-section-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+/* Chart placeholder */
+.eda-chart-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 280px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border: 1px dashed var(--border);
   border-radius: 8px;
+}
+
+/* Stat Cards */
+.eda-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.eda-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+  text-align: center;
+}
+
+.eda-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.eda-stat-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Community Overview Layout */
+.eda-overview-layout {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1rem;
+}
+
+.eda-map-container {
+  height: 460px;
+  border-radius: var(--radius);
+  overflow: hidden;
   border: 1px solid var(--border);
 }
 
-.eda-geo-legend {
+.eda-map-legend {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  gap: 0.4rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
+  margin-top: 0.5rem;
   justify-content: center;
 }
 
-.eda-geo-gradient {
-  width: 120px;
+.eda-map-legend-dot {
+  width: 10px;
   height: 10px;
-  border-radius: 5px;
-  background: linear-gradient(to right, #22c55e, #6c63ff);
+  border-radius: 50%;
+  display: inline-block;
 }
 
-/* Ranking table */
+/* Ranking Table */
 .eda-ranking-wrap {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 420px;
   border-radius: 8px;
   border: 1px solid var(--border);
 }
@@ -1235,6 +1322,7 @@ body {
 .eda-ranking-table thead {
   position: sticky;
   top: 0;
+  z-index: 1;
 }
 
 .eda-ranking-table th {
@@ -1264,12 +1352,12 @@ body {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
-  width: 40px;
+  width: 35px;
 }
 
 .eda-rank-name {
   font-weight: 600;
-  max-width: 220px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1278,14 +1366,27 @@ body {
   color: var(--text-muted);
 }
 
+.eda-state-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.eda-state-badge.georgia { background: rgba(108, 99, 255, 0.2); color: #6c63ff; }
+.eda-state-badge.alabama { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+.eda-state-badge.florida { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+
 .eda-rank-value {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
 .eda-rank-bar-cell {
-  width: 200px;
-  min-width: 200px;
+  width: 140px;
+  min-width: 140px;
 }
 
 .eda-rank-bar-track {
@@ -1300,6 +1401,246 @@ body {
   border-radius: 3px;
   background: var(--accent);
   transition: width 0.3s ease;
+}
+
+.eda-rank-search {
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+  margin: 0.6rem 0;
+  transition: border-color 0.15s;
+}
+
+.eda-rank-search:focus {
+  border-color: var(--accent);
+}
+
+.eda-rank-search::placeholder {
+  color: var(--text-muted);
+}
+
+/* Search dropdown */
+.eda-radar-controls {
+  position: relative;
+  max-width: 360px;
+  margin-bottom: 0.75rem;
+}
+
+.eda-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.eda-search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.eda-search-item:last-child {
+  border-bottom: none;
+}
+
+.eda-search-item:hover {
+  background: var(--surface-hover);
+}
+
+.eda-search-name {
+  font-weight: 600;
+}
+
+.eda-search-state {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Box Plot */
+.eda-box-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.eda-box-chart {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.eda-box-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.6rem;
+}
+
+.eda-box-states {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.eda-box-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.eda-box-label {
+  width: 24px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.eda-box-visual {
+  flex: 1;
+  height: 16px;
+  position: relative;
+  background: var(--surface);
+  border-radius: 3px;
+}
+
+.eda-box-whisker {
+  position: absolute;
+  top: 7px;
+  height: 2px;
+  background: var(--text-muted);
+}
+
+.eda-box-body {
+  position: absolute;
+  top: 2px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+.eda-box-median {
+  position: absolute;
+  top: 1px;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+}
+
+.eda-box-value {
+  width: 80px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Correlation Matrix */
+.eda-corr-matrix-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.eda-corr-matrix {
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.eda-corr-matrix th,
+.eda-corr-matrix td {
+  padding: 0.35rem 0.45rem;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.eda-corr-matrix th {
+  background: var(--bg);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.eda-corr-header {
+  display: inline-block;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  height: 70px;
+  line-height: 1.2;
+}
+
+.eda-corr-row-label {
+  background: var(--bg);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: left !important;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eda-corr-cell {
+  cursor: pointer;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 42px;
+  transition: outline 0.1s;
+}
+
+.eda-corr-cell:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.eda-corr-cell.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.eda-corr-stats {
+  display: flex;
+  gap: 1rem;
+}
+
+.eda-corr-r,
+.eda-corr-r2 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: rgba(108, 99, 255, 0.1);
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
 }
 
 /* ---- Responsive ---- */
@@ -1356,6 +1697,13 @@ body {
     align-items: flex-start;
     gap: 0.75rem;
   }
+  .eda-kpi-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .eda-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
   .eda-controls {
     flex-direction: column;
   }
@@ -1363,8 +1711,11 @@ body {
     min-width: 0;
     width: 100%;
   }
+  .eda-overview-layout {
+    grid-template-columns: 1fr;
+  }
   .eda-rank-bar-cell {
-    width: 100px;
-    min-width: 100px;
+    width: 80px;
+    min-width: 80px;
   }
 }
