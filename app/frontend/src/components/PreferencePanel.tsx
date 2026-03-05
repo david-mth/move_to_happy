@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { Metadata, ScoreRequest } from "../types";
+import { CitySearch } from "./CitySearch";
 
 interface Props {
   prefs: ScoreRequest;
@@ -53,6 +54,13 @@ export function PreferencePanel({ prefs, meta, onChange, onScore, loading }: Pro
         }
       }
       onChange({ ...prefs, ...patch });
+    },
+    [prefs, onChange],
+  );
+
+  const handleCitySelect = useCallback(
+    (location: { lat: number; lon: number; state: string }) => {
+      onChange({ ...prefs, anchor_lat: location.lat, anchor_lon: location.lon, anchor_state: location.state });
     },
     [prefs, onChange],
   );
@@ -125,6 +133,7 @@ export function PreferencePanel({ prefs, meta, onChange, onScore, loading }: Pro
       {/* Location */}
       <div className="pref-section">
         <h3>Location</h3>
+        <CitySearch onSelect={handleCitySelect} />
         <div className="pref-field">
           <label>
             Anchor State

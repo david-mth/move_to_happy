@@ -44,6 +44,7 @@ DATAFRAME_NAMES: dict[str, str] = {
     "employment": "tier1/bls_employment.csv",
     "hospitals": "tier1/cms_hospitals.csv",
     "physicians": "tier1/cms_physicians.csv",
+    "geocoder": "tier1/geocoder.csv",
 }
 
 # ---------------------------------------------------------------------------
@@ -225,7 +226,10 @@ async def data_read(name: str, offset: int = 0, limit: int = 100):
     df = pd.read_csv(csv_path)
     total = len(df)
     page = df.iloc[offset : offset + limit]
-    records = page.where(pd.notna(page), None).to_dict(orient="records")
+    records = [
+        {k: (None if pd.isna(v) else v) for k, v in row.items()}
+        for row in page.to_dict(orient="records")
+    ]
     return {
         "name": name,
         "total_rows": total,
