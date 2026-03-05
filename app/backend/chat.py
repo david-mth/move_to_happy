@@ -69,51 +69,38 @@ TOOL_DEFINITION = {
     },
 }
 
-MAX_TOOL_ROUNDS = 12
-MAX_OUTPUT_CHARS = 12_000
+MAX_TOOL_ROUNDS = 6
+MAX_OUTPUT_CHARS = 8_000
 
 
 def _build_schema_description(dataframes: dict[str, pd.DataFrame]) -> str:
-    """Generate a schema summary for each DataFrame."""
+    """Generate a compact schema summary for each DataFrame."""
     parts: list[str] = []
     for name, df in dataframes.items():
-        lines = [f"### `{name}` — {len(df):,} rows, {len(df.columns)} columns\n"]
-        lines.append("| Column | Type | Sample values |")
-        lines.append("|--------|------|---------------|")
-        for col in df.columns:
-            dtype = str(df[col].dtype)
-            samples = df[col].dropna().head(3).tolist()
-            sample_str = ", ".join(repr(s) for s in samples)
-            if len(sample_str) > 80:
-                sample_str = sample_str[:77] + "..."
-            lines.append(f"| {col} | {dtype} | {sample_str} |")
-        parts.append("\n".join(lines))
+        cols = ", ".join(f"{c}({df[c].dtype})" for c in df.columns)
+        parts.append(f"**{name}** ({len(df):,} rows): {cols}")
     return "\n\n".join(parts)
 
 
 def _build_system_prompt(dataframes: dict[str, pd.DataFrame]) -> str:
     schema = _build_schema_description(dataframes)
     return f"""\
-You are a data analyst for the "Move to Happy" project, which scores ~1,305 \
-communities across Georgia, Alabama, and Florida to help people find the best \
-place to live.
+You are a data analyst for "Move to Happy" — ~1,305 communities across \
+Georgia, Alabama, and Florida scored to help people find the best place to live.
 
-You have access to the following pandas DataFrames loaded in memory:
+Available DataFrames (join on `canonical_id`):
 
 {schema}
 
-## Instructions
-
-- Use the `run_pandas` tool to query data. You can call it multiple times.
-- The DataFrames are available by their names shown above (e.g. `communities`, \
-`census`, `crime`, etc.).
-- Always verify column names exist before using them — refer to the schema above.
-- Format numbers nicely in your answers (commas for thousands, round decimals).
-- When showing tabular results, use the `run_pandas` tool with `.to_markdown()` \
-and include the markdown table in your response.
-- Keep answers concise but thorough. Mention any caveats about the data.
-- If a question cannot be answered from the available data, say so clearly.
-- You may join DataFrames on `canonical_id` which is present in all datasets."""
+Rules:
+- Use `run_pandas` to query data. Be efficient — try to answer in 1-2 tool calls.
+- Column names are listed above. Use them directly, don't waste a call to check.
+- For tables, use `.head(10).to_markdown()`. Keep results to top 10-15 rows.
+- Format numbers nicely. Be concise. If data doesn't exist, say so immediately.
+- Key columns: communities has city, state_name, lat, lon; crime has \
+violent_crime_rate, property_crime_rate; census has median_household_income, \
+unemployment_rate; tax_rates has effective_property_tax_rate, \
+combined_sales_tax_rate; education has hs_graduation_rate, employment_rate."""
 
 
 def _safe_exec(code: str, dataframes: dict[str, pd.DataFrame]) -> str:
@@ -224,7 +211,7 @@ class DataChat:
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self._client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=4096,
                 system=self._system_prompt,
                 tools=[TOOL_DEFINITION],

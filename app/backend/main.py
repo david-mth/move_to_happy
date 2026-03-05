@@ -45,6 +45,9 @@ DATAFRAME_NAMES: dict[str, str] = {
     "hospitals": "tier1/cms_hospitals.csv",
     "physicians": "tier1/cms_physicians.csv",
     "geocoder": "tier1/geocoder.csv",
+    "geodistance": "tier1/geodistance.csv",
+    "tax_rates": "tier1/tax_rates.csv",
+    "education": "tier1/county_education.csv",
 }
 
 # ---------------------------------------------------------------------------
@@ -78,6 +81,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
             data_chat = None
     else:
         import logging
+
         logging.warning(
             "Community data not found at %s. "
             "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to sync data from S3.",
