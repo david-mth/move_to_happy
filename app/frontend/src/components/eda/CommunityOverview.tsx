@@ -10,7 +10,7 @@ interface Props {
 }
 
 const INDEX_KEYS = [
-  "affordability", "safety", "healthcare", "education", "digital", "environmental",
+  "affordability", "safety", "healthcare", "education", "digital", "environmental", "recreation",
 ] as const;
 
 type MetricKey = (typeof INDEX_KEYS)[number] | "population" | "cost_of_living";
@@ -22,6 +22,7 @@ const METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
   { value: "education", label: "Education Index" },
   { value: "digital", label: "Digital Readiness" },
   { value: "environmental", label: "Environmental Index" },
+  { value: "recreation", label: "Recreation Index" },
   { value: "population", label: "Population" },
 ];
 
@@ -152,6 +153,8 @@ export function CommunityOverview({ indices, stateFilter }: Props) {
                       Digital: {c.digital ?? "—"}
                       <br />
                       Environmental: {c.environmental ?? "—"}
+                      <br />
+                      Recreation: {c.recreation ?? "—"}
                     </div>
                   </Popup>
                 </CircleMarker>

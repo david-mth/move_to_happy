@@ -26,7 +26,7 @@ interface Props {
 }
 
 const INDEX_KEYS = [
-  "affordability", "safety", "healthcare", "education", "digital", "environmental",
+  "affordability", "safety", "healthcare", "education", "digital", "environmental", "recreation",
 ] as const;
 
 const INDEX_LABELS: Record<string, string> = {
@@ -36,6 +36,7 @@ const INDEX_LABELS: Record<string, string> = {
   education: "Education",
   digital: "Digital",
   environmental: "Environment",
+  recreation: "Recreation",
 };
 
 const STATE_COLORS: Record<string, string> = {

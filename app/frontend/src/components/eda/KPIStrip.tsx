@@ -26,6 +26,7 @@ const CARDS: {
   { key: "avg_violent_crime_rate", label: "Avg Crime Rate", suffix: " /100k", decimals: 1 },
   { key: "avg_broadband_pct", label: "Avg Broadband", suffix: "%", decimals: 1 },
   { key: "avg_property_tax_rate", label: "Avg Property Tax", suffix: "%", decimals: 2 },
+  { key: "avg_lake_distance", label: "Avg Lake Dist", suffix: " mi", decimals: 1 },
 ];
 
 export function KPIStrip({ kpis }: Props) {

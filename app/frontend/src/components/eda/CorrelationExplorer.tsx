@@ -28,6 +28,8 @@ const NICE_NAMES: Record<string, string> = {
   hs_graduation_rate: "HS Grad Rate",
   effective_property_tax_rate: "Property Tax",
   combined_sales_tax_rate: "Sales Tax",
+  lake_distance_miles: "Lake Distance",
+  lake_area_sq_mi: "Lake Area",
 };
 
 function corrColor(val: number): string {

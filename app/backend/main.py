@@ -332,17 +332,19 @@ def _build_merged_df() -> pd.DataFrame:
     comm = chat_dataframes.get("communities")
     if comm is None:
         return pd.DataFrame()
-    base = comm[
-        [
-            "canonical_id",
-            "city_state",
-            "state_name",
-            "latitude",
-            "longitude",
-            "population",
-            "cost_of_living",
-        ]
-    ].copy()
+    base_cols = [
+        "canonical_id",
+        "city_state",
+        "state_name",
+        "latitude",
+        "longitude",
+        "population",
+        "cost_of_living",
+    ]
+    for extra in ["miles_to_lake", "miles_to_beach", "miles_to_mountains"]:
+        if extra in comm.columns:
+            base_cols.append(extra)
+    base = comm[base_cols].copy()
     join_map = {
         "census": ["median_home_value", "median_household_income"],
         "crime": ["violent_crime_rate", "property_crime_rate"],
@@ -364,6 +366,7 @@ def _build_merged_df() -> pd.DataFrame:
             "combined_sales_tax_rate",
         ],
         "employment": ["avg_annual_salary", "annual_avg_employment"],
+        "lake_distance": ["lake_distance_miles", "lake_name", "lake_area_sq_mi"],
     }
     for ds_name, cols in join_map.items():
         ds = chat_dataframes.get(ds_name)
@@ -411,6 +414,7 @@ async def eda_summary(state: str = "All"):
         "avg_violent_crime_rate": _safe_mean("violent_crime_rate"),
         "avg_broadband_pct": _safe_mean("pct_broadband_100_20"),
         "avg_property_tax_rate": _safe_mean("effective_property_tax_rate"),
+        "avg_lake_distance": _safe_mean("lake_distance_miles"),
     }
 
     idx = merged.copy()
@@ -496,6 +500,27 @@ async def eda_summary(state: str = "All"):
         env_cols.append("_env_oz")
     idx["environmental"] = idx[env_cols].mean(axis=1).round(1) if env_cols else np.nan
 
+    rec_cols = []
+    if "lake_distance_miles" in idx.columns:
+        idx["_rec_lake"] = _percentile_rank(
+            idx["lake_distance_miles"],
+            invert=True,
+        )
+        rec_cols.append("_rec_lake")
+    if "miles_to_lake" in idx.columns:
+        idx["_rec_mtl"] = _percentile_rank(idx["miles_to_lake"], invert=True)
+        rec_cols.append("_rec_mtl")
+    if "miles_to_beach" in idx.columns:
+        idx["_rec_beach"] = _percentile_rank(idx["miles_to_beach"], invert=True)
+        rec_cols.append("_rec_beach")
+    if "miles_to_mountains" in idx.columns:
+        idx["_rec_mtn"] = _percentile_rank(
+            idx["miles_to_mountains"],
+            invert=True,
+        )
+        rec_cols.append("_rec_mtn")
+    idx["recreation"] = idx[rec_cols].mean(axis=1).round(1) if rec_cols else np.nan
+
     out_cols = [
         "canonical_id",
         "city_state",
@@ -509,6 +534,7 @@ async def eda_summary(state: str = "All"):
         "education",
         "digital",
         "environmental",
+        "recreation",
     ]
     result = idx[[c for c in out_cols if c in idx.columns]].copy()
     records = [
@@ -538,6 +564,7 @@ async def eda_correlations(columns: str = ""):
         "pct_broadband_100_20",
         "pm25_mean",
         "avg_annual_salary",
+        "lake_distance_miles",
         "nearest_hospital_miles",
         "providers_per_1000_pop",
         "hs_graduation_rate",

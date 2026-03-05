@@ -154,6 +154,7 @@ export interface EDAKPIs {
   avg_violent_crime_rate: number | null;
   avg_broadband_pct: number | null;
   avg_property_tax_rate: number | null;
+  avg_lake_distance: number | null;
 }
 
 export interface CommunityIndex {
@@ -169,6 +170,7 @@ export interface CommunityIndex {
   education: number | null;
   digital: number | null;
   environmental: number | null;
+  recreation: number | null;
 }
 
 export interface EDASummary {

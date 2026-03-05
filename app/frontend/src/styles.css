@@ -1040,7 +1040,7 @@ body {
 /* KPI Strip */
 .eda-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -1698,7 +1698,7 @@ body {
     gap: 0.75rem;
   }
   .eda-kpi-strip {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   }
   .eda-tabs {
     flex-wrap: nowrap;
