@@ -253,6 +253,68 @@ async def data_read(name: str, offset: int = 0, limit: int = 100):
     }
 
 
+@app.get("/api/eda/columns")
+async def eda_columns():
+    """Return all datasets with numeric columns and basic stats for EDA."""
+    result = []
+    for name, df in chat_dataframes.items():
+        numeric_cols = []
+        for col in df.columns:
+            if col in ("canonical_id", "fips_5digit"):
+                continue
+            if pd.api.types.is_numeric_dtype(df[col]):
+                s = df[col].dropna()
+                numeric_cols.append(
+                    {
+                        "name": col,
+                        "min": round(float(s.min()), 4) if len(s) else 0,
+                        "max": round(float(s.max()), 4) if len(s) else 0,
+                        "mean": round(float(s.mean()), 4) if len(s) else 0,
+                        "count": int(s.count()),
+                    }
+                )
+        cat_cols = []
+        for col in df.columns:
+            if col in ("canonical_id", "fips_5digit"):
+                continue
+            if df[col].dtype == "object" and df[col].nunique() < 20:
+                cat_cols.append(
+                    {
+                        "name": col,
+                        "values": sorted(df[col].dropna().unique().tolist()),
+                    }
+                )
+        result.append(
+            {
+                "name": name,
+                "rows": len(df),
+                "numeric_columns": numeric_cols,
+                "categorical_columns": cat_cols,
+            }
+        )
+    return result
+
+
+@app.get("/api/eda/data/{dataset_name}")
+async def eda_data(dataset_name: str, columns: str = ""):
+    """Return specific columns from a dataset for EDA charts."""
+    if dataset_name not in chat_dataframes:
+        return {"error": "Dataset not found"}
+    df = chat_dataframes[dataset_name]
+    if columns:
+        cols = [c.strip() for c in columns.split(",") if c.strip() in df.columns]
+    else:
+        cols = list(df.columns)
+    if "canonical_id" not in cols and "canonical_id" in df.columns:
+        cols = ["canonical_id"] + cols
+    subset = df[cols].copy()
+    records = [
+        {k: (None if pd.isna(v) else v) for k, v in row.items()}
+        for row in subset.to_dict(orient="records")
+    ]
+    return {"name": dataset_name, "columns": cols, "rows": records}
+
+
 @app.get("/api/metadata")
 async def metadata():
     return {

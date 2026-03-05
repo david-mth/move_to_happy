@@ -3,6 +3,7 @@ import type {
   ChatStatus,
   DatasetInfo,
   DatasetPage,
+  EDADataset,
   Metadata,
   ScoreRequest,
   ScoreResponse,
@@ -60,5 +61,22 @@ export async function sendChatMessage(
 export async function fetchChatStatus(): Promise<ChatStatus> {
   const res = await fetch(`${BASE}/chat/status`);
   if (!res.ok) throw new Error(`Chat status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEDAColumns(): Promise<EDADataset[]> {
+  const res = await fetch(`${BASE}/eda/columns`);
+  if (!res.ok) throw new Error(`EDA columns failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEDAData(
+  dataset: string,
+  columns: string[],
+): Promise<{ name: string; columns: string[]; rows: Record<string, unknown>[] }> {
+  const res = await fetch(
+    `${BASE}/eda/data/${dataset}?columns=${columns.join(",")}`,
+  );
+  if (!res.ok) throw new Error(`EDA data failed: ${res.status}`);
   return res.json();
 }

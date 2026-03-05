@@ -4,6 +4,7 @@ import { fetchMetadata, fetchScore } from "./api";
 import { CommunityCard } from "./components/CommunityCard";
 import { DataChat } from "./components/DataChat";
 import { DataExplorer } from "./components/DataExplorer";
+import { EDAPage } from "./components/EDAPage";
 import { PreferencePanel } from "./components/PreferencePanel";
 import { ResultsMap } from "./components/ResultsMap";
 import type { CommunityScore, Metadata, ScoreRequest, ScoreResponse } from "./types";
@@ -125,6 +126,12 @@ export default function App() {
               Data Explorer
             </Link>
             <Link
+              to="/eda"
+              className={`nav-tab ${location.pathname === "/eda" ? "active" : ""}`}
+            >
+              EDA
+            </Link>
+            <Link
               to="/chat"
               className={`nav-tab ${location.pathname === "/chat" ? "active" : ""}`}
             >
@@ -137,6 +144,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ScorerPage />} />
         <Route path="/data" element={<DataExplorer />} />
+        <Route path="/eda" element={<EDAPage />} />
         <Route path="/chat" element={<DataChat />} />
       </Routes>
     </div>

@@ -127,6 +127,26 @@ export interface ChatStatus {
   available: boolean;
 }
 
+export interface EDAColumnStats {
+  name: string;
+  min: number;
+  max: number;
+  mean: number;
+  count: number;
+}
+
+export interface EDACategoricalColumn {
+  name: string;
+  values: string[];
+}
+
+export interface EDADataset {
+  name: string;
+  rows: number;
+  numeric_columns: EDAColumnStats[];
+  categorical_columns: EDACategoricalColumn[];
+}
+
 export const DEFAULT_PREFS: ScoreRequest = {
   monthly_payment: 2500,
   loan_term_years: 30,

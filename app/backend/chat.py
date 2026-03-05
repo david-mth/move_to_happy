@@ -211,7 +211,7 @@ class DataChat:
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self._client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-haiku-20240307",
                 max_tokens=4096,
                 system=self._system_prompt,
                 tools=[TOOL_DEFINITION],

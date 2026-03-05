@@ -982,6 +982,326 @@ body {
   text-align: center;
 }
 
+/* ---- EDA Page ---- */
+.eda-page {
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(100vh - 70px);
+  padding: 1.25rem 2rem;
+}
+
+.eda-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.eda-header h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.eda-subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+
+.eda-state-filter {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.2rem;
+}
+
+.eda-state-btn {
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.eda-state-btn:hover {
+  color: var(--text);
+}
+
+.eda-state-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.eda-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.eda-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.eda-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.85rem 1.15rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.eda-panel-header:hover {
+  background: var(--surface-hover);
+}
+
+.eda-panel-chevron {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.eda-panel-body {
+  padding: 0 1.15rem 1.15rem;
+}
+
+.eda-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.eda-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.eda-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.eda-controls select {
+  padding: 0.4rem 0.6rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  min-width: 160px;
+}
+
+.eda-controls input[type="range"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.eda-value {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.eda-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.eda-toggle button {
+  padding: 0.35rem 0.7rem;
+  background: var(--bg);
+  color: var(--text-muted);
+  border: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.eda-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.eda-chart-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.eda-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 300px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.eda-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.eda-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.eda-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* Geo heatmap */
+.eda-geo-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.eda-geo-svg {
+  width: 100%;
+  max-height: 420px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.eda-geo-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  justify-content: center;
+}
+
+.eda-geo-gradient {
+  width: 120px;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(to right, #22c55e, #6c63ff);
+}
+
+/* Ranking table */
+.eda-ranking-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.eda-ranking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.eda-ranking-table thead {
+  position: sticky;
+  top: 0;
+}
+
+.eda-ranking-table th {
+  background: var(--bg);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.eda-ranking-table td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.eda-ranking-table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.eda-rank-num {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  width: 40px;
+}
+
+.eda-rank-name {
+  font-weight: 600;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eda-rank-state {
+  color: var(--text-muted);
+}
+
+.eda-rank-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.eda-rank-bar-cell {
+  width: 200px;
+  min-width: 200px;
+}
+
+.eda-rank-bar-track {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.eda-rank-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
   .layout {
@@ -1027,5 +1347,24 @@ body {
   }
   .chat-input-area {
     padding: 0.75rem 1rem 1rem;
+  }
+  .eda-page {
+    padding: 1rem;
+  }
+  .eda-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .eda-controls {
+    flex-direction: column;
+  }
+  .eda-controls select {
+    min-width: 0;
+    width: 100%;
+  }
+  .eda-rank-bar-cell {
+    width: 100px;
+    min-width: 100px;
   }
 }
