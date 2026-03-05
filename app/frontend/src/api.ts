@@ -1,6 +1,6 @@
 import type {
-  ChatResponse,
-  ChatStatus,
+  ConciergeResponse,
+  ConciergeStatus,
   DatasetInfo,
   DatasetPage,
   EDACorrelationMatrix,
@@ -47,22 +47,22 @@ export async function fetchDatasetPage(
   return res.json();
 }
 
-export async function sendChatMessage(
+export async function sendConciergeMessage(
   message: string,
-  history: { role: string; content: string }[],
-): Promise<ChatResponse> {
-  const res = await fetch(`${BASE}/chat`, {
+  sessionId: string = "default",
+): Promise<ConciergeResponse> {
+  const res = await fetch(`${BASE}/concierge/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, session_id: sessionId }),
   });
-  if (!res.ok) throw new Error(`Chat request failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Concierge request failed: ${res.status}`);
   return res.json();
 }
 
-export async function fetchChatStatus(): Promise<ChatStatus> {
-  const res = await fetch(`${BASE}/chat/status`);
-  if (!res.ok) throw new Error(`Chat status failed: ${res.status}`);
+export async function fetchConciergeStatus(): Promise<ConciergeStatus> {
+  const res = await fetch(`${BASE}/concierge/status`);
+  if (!res.ok) throw new Error(`Concierge status failed: ${res.status}`);
   return res.json();
 }
 

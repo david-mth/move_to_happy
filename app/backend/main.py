@@ -58,12 +58,12 @@ DATAFRAME_NAMES: dict[str, str] = {
 engine: LMEEngine | None = None
 enrichment = EnrichmentStore()
 chat_dataframes: dict[str, pd.DataFrame] = {}
-data_chat: Any = None
+concierge_sessions: dict[str, Any] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    global engine, data_chat
+    global engine
     community_csv = DATA_DIR / "mth_communities.csv"
     if community_csv.exists():
         df = pd.read_csv(community_csv)
@@ -74,19 +74,13 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
             csv_path = DATA_DIR / rel_path
             if csv_path.exists():
                 chat_dataframes[name] = pd.read_csv(csv_path)
-
-        try:
-            from chat import DataChat  # noqa: E402
-
-            data_chat = DataChat(chat_dataframes)
-        except (ImportError, ValueError):
-            data_chat = None
     else:
         import logging
 
         logging.warning(
             "Community data not found at %s. "
-            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to sync data from S3.",
+            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY "
+            "to sync data from S3.",
             community_csv,
         )
 
@@ -178,37 +172,137 @@ async def score(req: ScoreRequest):
     )
 
 
-class ChatRequest(BaseModel):
+class ConciergeRequest(BaseModel):
     message: str
-    history: list[dict[str, Any]] = Field(default_factory=list)
+    session_id: str = "default"
 
 
-class ChatResponse(BaseModel):
+class ConciergeResponse(BaseModel):
     role: str = "assistant"
     content: str
-    table: list[dict[str, str]] | None = None
+    results: dict[str, Any] | None = None
+    explanations: list[dict[str, str]] | None = None
+    needs_clarification: list[str] | None = None
+    session_id: str = "default"
 
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    if data_chat is None:
-        return ChatResponse(
-            content=(
-                "Chat is unavailable. Make sure the ANTHROPIC_API_KEY "
-                "environment variable is set and the anthropic package "
-                "is installed."
-            ),
+def _get_or_create_session(session_id: str) -> Any:
+    """Get or create a ConciergeOrchestrator for the given session."""
+    if session_id in concierge_sessions:
+        return concierge_sessions[session_id]
+
+    try:
+        from move_to_happy.ai.claude_client import ClaudeClient
+        from move_to_happy.ai.concierge import ConciergeOrchestrator
+        from move_to_happy.ai.explanation import ExplanationGenerator
+        from move_to_happy.ai.intake import IntakeInterpreter
+        from move_to_happy.rag.indexer import FAISSIndex
+        from move_to_happy.rag.retriever import RAGRetriever
+
+        claude = ClaudeClient()
+        intake = IntakeInterpreter(claude)
+
+        rag_index = FAISSIndex()
+        rag_dir = PROJECT_ROOT / "data" / "rag_index"
+        if rag_dir.exists():
+            rag_index.load(rag_dir)
+
+        rag = RAGRetriever(index=rag_index)
+        explainer = ExplanationGenerator(claude, rag)
+
+        session = ConciergeOrchestrator(
+            claude=claude,
+            intake=intake,
+            explainer=explainer,
+            rag=rag,
+            lme=engine,
         )
-    result = data_chat.chat(req.message, req.history)
-    return ChatResponse(
-        content=result["content"],
-        table=result.get("table"),
+        concierge_sessions[session_id] = session
+        return session
+    except Exception:
+        import logging
+
+        logging.exception("Failed to create concierge session")
+        return None
+
+
+@app.post("/api/concierge/message", response_model=ConciergeResponse)
+async def concierge_message(req: ConciergeRequest):
+    if engine is None:
+        return ConciergeResponse(
+            content="The matching engine is not loaded. Please try again later.",
+            session_id=req.session_id,
+        )
+
+    session = _get_or_create_session(req.session_id)
+    if session is None:
+        return ConciergeResponse(
+            content=(
+                "The AI concierge is unavailable. Make sure the "
+                "ANTHROPIC_API_KEY environment variable is set."
+            ),
+            session_id=req.session_id,
+        )
+
+    result = session.handle_message(req.message)
+    return ConciergeResponse(
+        content=result.get("content", ""),
+        results=result.get("results"),
+        explanations=result.get("explanations"),
+        needs_clarification=result.get("needs_clarification"),
+        session_id=req.session_id,
     )
 
 
-@app.get("/api/chat/status")
-async def chat_status():
-    return {"available": data_chat is not None}
+@app.get("/api/concierge/status")
+async def concierge_status():
+    try:
+        import os
+
+        import anthropic  # noqa: F401
+
+        has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return {"available": engine is not None and has_key}
+    except ImportError:
+        return {"available": False}
+
+
+@app.post("/api/lead-summary")
+async def lead_summary(session_id: str = "default"):
+    session = concierge_sessions.get(session_id)
+    if session is None:
+        return {"error": "No active session found"}
+
+    try:
+        from move_to_happy.ai.claude_client import ClaudeClient
+        from move_to_happy.ai.lead_summary import LeadSummaryAgent
+
+        claude = ClaudeClient()
+        agent = LeadSummaryAgent(claude)
+        data = session.get_session_data()
+        summary = agent.generate_summary(
+            conversation_history=data["conversation_history"],
+            extracted_preferences=data["extracted_preferences"],
+            lme_results=data["lme_results"],
+        )
+        return summary
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@app.get("/api/communities/{canonical_id}")
+async def community_detail(canonical_id: str):
+    """Return community profile by canonical ID."""
+    comm = chat_dataframes.get("communities")
+    if comm is None:
+        return {"error": "Community data not loaded"}
+    row = comm[comm["canonical_id"] == canonical_id]
+    if row.empty:
+        return {"error": "Community not found"}
+    record = row.iloc[0].to_dict()
+    record = {k: (None if pd.isna(v) else v) for k, v in record.items()}
+    record["enrichment"] = enrichment.enrich(canonical_id)
+    return record
 
 
 @app.get("/api/data/list")

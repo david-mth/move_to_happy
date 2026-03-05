@@ -111,19 +111,16 @@ export interface DatasetPage {
   rows: Record<string, unknown>[];
 }
 
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  table: Record<string, string>[] | null;
-}
-
-export interface ChatResponse {
+export interface ConciergeResponse {
   role: string;
   content: string;
-  table: Record<string, string>[] | null;
+  results?: Record<string, unknown> | null;
+  explanations?: Record<string, string>[] | null;
+  needs_clarification?: string[] | null;
+  session_id: string;
 }
 
-export interface ChatStatus {
+export interface ConciergeStatus {
   available: boolean;
 }
 

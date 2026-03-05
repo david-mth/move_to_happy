@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sendChatMessage, fetchChatStatus } from "../api";
-import type { ChatMessage } from "../types";
+import { sendConciergeMessage, fetchConciergeStatus } from "../api";
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
 const STARTERS = [
-  "What are the safest communities in Georgia?",
-  "Which communities have the best broadband access?",
-  "Compare average home prices across the three states",
-  "What are the top 10 communities by median household income?",
-  "Which communities have the most hospitals within 30 miles?",
-  "Show me communities with low crime rates and good air quality",
+  "I'm looking for a community near Atlanta with a budget of $2,500/month",
+  "Help me find an affordable place in Florida near the beach",
+  "I want to live near mountains in Georgia with good schools",
+  "Compare communities near Birmingham, Alabama for a family of four",
+  "I need a quiet community with good healthcare access",
+  "Find me a place with low crime and fast internet",
 ];
 
 function renderMarkdown(text: string) {
@@ -71,7 +75,7 @@ function renderMarkdown(text: string) {
       );
       continue;
     } else if (line.trim() === "") {
-      // skip blank lines
+      // skip blank
     } else {
       elements.push(
         <p key={i} className="chat-p">
@@ -140,7 +144,7 @@ function renderTable(lines: string[], keyBase: number) {
 }
 
 export function DataChat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -148,47 +152,36 @@ export function DataChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    fetchChatStatus().then((s) => setAvailable(s.available));
+    fetchConciergeStatus().then((s) => setAvailable(s.available));
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const buildHistory = useCallback(() => {
-    const hist: { role: string; content: string }[] = [];
-    for (const msg of messages) {
-      hist.push({ role: msg.role, content: msg.content });
-    }
-    return hist;
-  }, [messages]);
-
   const send = useCallback(
     async (text: string) => {
       if (!text.trim() || loading) return;
 
-      const userMsg: ChatMessage = { role: "user", content: text, table: null };
+      const userMsg: Message = { role: "user", content: text };
       setMessages((prev) => [...prev, userMsg]);
       setInput("");
       setLoading(true);
 
       try {
-        const history = buildHistory();
-        const res = await sendChatMessage(text, history);
-        const assistantMsg: ChatMessage = {
+        const res = await sendConciergeMessage(text);
+        const assistantMsg: Message = {
           role: "assistant",
           content: res.content,
-          table: res.table,
         };
         setMessages((prev) => [...prev, assistantMsg]);
       } catch (e) {
-        const errMsg: ChatMessage = {
+        const errMsg: Message = {
           role: "assistant",
           content:
             e instanceof Error
               ? `Error: ${e.message}`
               : "Something went wrong. Please try again.",
-          table: null,
         };
         setMessages((prev) => [...prev, errMsg]);
       } finally {
@@ -196,7 +189,7 @@ export function DataChat() {
         inputRef.current?.focus();
       }
     },
-    [loading, buildHistory],
+    [loading],
   );
 
   const handleKeyDown = useCallback(
@@ -213,10 +206,10 @@ export function DataChat() {
     return (
       <div className="chat-page">
         <div className="chat-unavailable">
-          <h2>Chat Unavailable</h2>
+          <h2>Concierge Unavailable</h2>
           <p>
             The ANTHROPIC_API_KEY environment variable is not set. Set it in
-            Replit Secrets or a local .env file to enable the chat feature.
+            your .env file to enable the AI concierge.
           </p>
         </div>
       </div>
@@ -228,10 +221,11 @@ export function DataChat() {
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-welcome">
-            <h2>Chat with your data</h2>
+            <h2>Move to Happy Concierge</h2>
             <p>
-              Ask questions about your community datasets in plain English.
-              Claude will analyze the data and respond with insights.
+              Tell me about your ideal community — your budget, where you want
+              to be, and what matters most. I'll find your best matches using
+              the Lifestyle Matching Engine and explain why each one fits.
             </p>
             <div className="chat-starters">
               {STARTERS.map((q) => (
@@ -251,7 +245,7 @@ export function DataChat() {
         {messages.map((msg, i) => (
           <div key={i} className={`chat-msg chat-msg-${msg.role}`}>
             <div className="chat-msg-label">
-              {msg.role === "user" ? "You" : "Claude"}
+              {msg.role === "user" ? "You" : "Concierge"}
             </div>
             <div className="chat-msg-body">
               {msg.role === "assistant" ? (
@@ -265,7 +259,7 @@ export function DataChat() {
 
         {loading && (
           <div className="chat-msg chat-msg-assistant">
-            <div className="chat-msg-label">Claude</div>
+            <div className="chat-msg-label">Concierge</div>
             <div className="chat-msg-body">
               <div className="chat-thinking">
                 <span className="dot" />
@@ -283,7 +277,7 @@ export function DataChat() {
         <textarea
           ref={inputRef}
           className="chat-input"
-          placeholder="Ask a question about your data..."
+          placeholder="Tell me about your ideal community..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}

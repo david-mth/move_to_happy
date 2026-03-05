@@ -135,7 +135,7 @@ export default function App() {
               to="/chat"
               className={`nav-tab ${location.pathname === "/chat" ? "active" : ""}`}
             >
-              Chat
+              Concierge
             </Link>
           </nav>
         </div>
