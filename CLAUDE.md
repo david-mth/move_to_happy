@@ -99,3 +99,64 @@ Raw CSV -> Normalize (01) -> S3 (02) -> Athena/Glue (03-06) -> Redshift (07-10) 
 - **Redshift costs money** (~$0.25/hr) — always run `99_cleanup.py` when done
 - `sagemaker/processing/processing_script.py` accesses private `engine._df`, `engine._core_availability`, `engine._attribute_overlay` — be careful when refactoring engine internals
 - Test coverage is minimal (only a smoke test exists) — add tests before modifying scoring logic
+
+---
+
+# AI Layer Development Context
+
+## THE ONE RULE
+The LME is the sole system of record. The AI layer guides, translates, and explains.
+It does NOT score, rank, or make matching decisions. It is removable without affecting LME outputs.
+
+## CANONICAL REFERENCE DOCUMENTS
+Two documents define the LME. All code must conform to these:
+1. **Foundational Principles** — architectural North Star (eliminators precede optimization,
+   every metric normalizable & weightable, every score explainable, spillover is core,
+   structure before narrative, no static rankings, dual-layer consumer/EDO)
+2. **Master Technical Logic Spec v1.1** — the math (ATL, inventory banding, band windows,
+   constraint pressure, housing availability score, spillover formula, final score function)
+
+## AI LAYER = THREE FUNCTIONS
+1. **Intake/Interpreter** — Claude tool use to extract structured preferences from free-text
+2. **Concierge Orchestrator** — multi-turn conversation: collect → validate → call LME → present → refine
+3. **Explanation Generator** — Claude + RAG context + LME trace → human-readable explanations
+
+## RAG CONSTRAINTS
+- FAISS for vector storage, all-MiniLM-L6-v2 for embeddings (384 dims)
+- RAG is READ-ONLY narrative context — never enters LME scoring pipeline
+- Every RAG document carries canonical_city_id (format: mth_{state}_{sequence})
+- Chunks: 512 tokens, 64 token overlap, sentence-aware boundaries
+- Index serialized to S3 alongside existing data pipeline
+
+## CLAUDE API CONVENTIONS
+- LLM Endpoint: Anthropic Claude API (claude-sonnet-4-5-20250929 for prod, claude-opus-4-6 for eval)
+- System prompt lives in src/move_to_happy/ai/prompts.py (derived from Foundational Principles)
+- All API calls go through claude_client.py wrapper
+- Structured extraction uses Claude tool use (function calling), not JSON-in-prompt
+- RAG context injected into user message, NOT system prompt (keep system prompt clean)
+- Temperature: 0.3 for explanations, 0.1 for extraction
+- Multi-turn via messages array, not prompt concatenation
+
+## DATA SOURCES FOR RAG (priority order)
+1. Community parquet from S3 (1,307 communities)
+2. LME spec documents (Foundational Principles + Technical Logic Spec)
+3. Keith's health module (3 indices: Healthcare Access, Lifestyle & Environmental, Longevity & Outcomes)
+4. Keith's economic base (CBP 2023, NAICS 2-digit, county-level)
+5. Keith's housing/economic profile (ACS DP04/DP03, BEA CA30, FRED)
+6. David Perkins' geospatial (city-to-mountain, city-to-ocean, city-to-lake distances)
+7. Hospital data (886 in target states via CMS)
+8. Community rep content (portal-authored profiles and FAQs)
+
+## NON-NEGOTIABLE GUARDRAILS
+- LLM does not compute scores or rankings
+- Identical LME inputs → identical outputs (with or without AI layer present)
+- All outputs reference canonical MTH city/state IDs
+- RAG content never enters scoring path (enforced in guardrails.py)
+- Spillover explanation is MANDATORY when a lifestyle anchor is eliminated residentially
+- No static "Top 10" lists — all comparisons are contextual and user-weighted
+- Structure before narrative — never invent community attributes
+
+## AI LAYER CODE CONVENTIONS
+- Module paths: src/move_to_happy/ai/ and src/move_to_happy/rag/
+- Anthropic SDK via `anthropic` package (not langchain-anthropic for core calls)
+- Config via environment variables + data/pipeline_config.json
