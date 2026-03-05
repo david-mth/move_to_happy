@@ -46,6 +46,7 @@ export interface Enrichment {
   total_providers?: number;
   primary_care_count?: number;
   providers_per_1000_pop?: number;
+  zip_code?: string;
 }
 
 export interface CommunityScore {

@@ -21,6 +21,7 @@ TIER1_FILES: dict[str, str] = {
     "employment": "bls_employment.csv",
     "hospitals": "cms_hospitals.csv",
     "physicians": "cms_physicians.csv",
+    "geocoder": "geocoder.csv",
 }
 
 HIGHLIGHT_FIELDS: dict[str, list[str]] = {
@@ -62,6 +63,9 @@ HIGHLIGHT_FIELDS: dict[str, list[str]] = {
         "total_providers",
         "primary_care_count",
         "providers_per_1000_pop",
+    ],
+    "geocoder": [
+        "zip_code",
     ],
 }
 
