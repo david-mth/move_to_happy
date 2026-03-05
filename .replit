@@ -1,8 +1,34 @@
-run = "cd app && bash run.sh"
-entrypoint = "app/run.sh"
+modules = ["python-base-3.13", "nodejs-20"]
+[agent]
+expertMode = true
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
 
-[deployment]
-run = ["bash", "-c", "cd app && bash run.sh"]
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd app && bash run.sh"
+waitForPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 80

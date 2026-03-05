@@ -39,10 +39,11 @@ def sync(*, force: bool = False) -> None:
     except NoCredentialsError:
         print(
             "[sync_data] AWS credentials not found. "
-            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.",
+            "Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. "
+            "Skipping data sync.",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return
 
     downloaded = 0
     skipped = 0
@@ -58,6 +59,13 @@ def sync(*, force: bool = False) -> None:
             s3.download_file(BUCKET, s3_key, str(local_path))
             print(f"  [OK] {local_rel}")
             downloaded += 1
+        except NoCredentialsError:
+            print(
+                "[sync_data] AWS credentials not found. "
+                "Skipping data sync.",
+                file=sys.stderr,
+            )
+            return
         except ClientError as exc:
             code = exc.response["Error"]["Code"]
             print(f"  [FAIL] {local_rel}  ({code})", file=sys.stderr)
