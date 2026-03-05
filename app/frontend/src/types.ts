@@ -111,17 +111,41 @@ export interface DatasetPage {
   rows: Record<string, unknown>[];
 }
 
+export interface ConciergeCommunityScore extends CommunityScore {
+  enrichment: Enrichment;
+}
+
+export interface ConciergeResults {
+  rankings: ConciergeCommunityScore[];
+  total_candidates: number;
+  eliminated_count: number;
+  max_purchase_price: number;
+  affordability_window: [number, number];
+}
+
+export interface ConciergeExplanation {
+  canonical_city_id: string;
+  explanation: string;
+  spillover_explanation?: string;
+}
+
 export interface ConciergeResponse {
   role: string;
   content: string;
-  results?: Record<string, unknown> | null;
-  explanations?: Record<string, string>[] | null;
+  results?: ConciergeResults | null;
+  explanations?: ConciergeExplanation[] | null;
   needs_clarification?: string[] | null;
   session_id: string;
 }
 
 export interface ConciergeStatus {
   available: boolean;
+}
+
+export interface ConciergeAnchor {
+  lat: number;
+  lon: number;
+  radiusMiles: number;
 }
 
 export interface EDAColumnStats {

@@ -617,7 +617,241 @@ body {
   font-size: 0.9rem;
 }
 
-/* ---- Chat Page ---- */
+/* ---- Concierge Two-Column Layout ---- */
+.concierge-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  max-height: calc(100vh - 70px);
+}
+
+.concierge-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  transition: flex 0.25s ease;
+}
+
+.concierge-layout.panel-open .concierge-thread {
+  flex: 0 0 52%;
+  border-right: 1px solid var(--border);
+}
+
+/* Results panel */
+.concierge-results-panel {
+  flex: 0 0 48%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--surface);
+  max-height: calc(100vh - 70px);
+}
+
+/* Context header strip */
+.concierge-context-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.concierge-header-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+.concierge-header-stats strong {
+  color: var(--text);
+}
+
+.concierge-header-sep {
+  color: var(--border);
+}
+
+.concierge-header-eliminated {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Map inside results panel */
+.concierge-map-wrap {
+  flex-shrink: 0;
+  height: 280px;
+  border-bottom: 1px solid var(--border);
+}
+
+.concierge-map-wrap .map-container {
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  margin-bottom: 0;
+}
+
+/* Community cards in panel */
+.concierge-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.concierge-card-wrap {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.concierge-card-wrap:last-child {
+  border-bottom: none;
+}
+
+/* AI explanation block under each card */
+.concierge-explanation {
+  padding: 0 0.25rem 0.25rem;
+}
+
+.concierge-explanation-toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+  transition: opacity 0.1s;
+}
+
+.concierge-explanation-toggle:hover {
+  opacity: 0.8;
+}
+
+.concierge-explanation-body {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 0.4rem 0.5rem;
+  background: rgba(108, 99, 255, 0.05);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  margin-top: 0.25rem;
+}
+
+.concierge-explanation-body p {
+  margin: 0 0 0.35rem;
+}
+
+.concierge-explanation-body p:last-child {
+  margin-bottom: 0;
+}
+
+.concierge-spillover-note {
+  font-style: italic;
+  color: var(--yellow);
+  font-size: 0.77rem;
+}
+
+/* Inline result summary inside a message bubble */
+.concierge-inline-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  background: rgba(108, 99, 255, 0.08);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.concierge-summary-stat {
+  color: var(--text-muted);
+}
+
+.concierge-summary-stat strong {
+  color: var(--text);
+}
+
+.concierge-summary-sep {
+  color: var(--border);
+}
+
+.concierge-view-map-btn {
+  margin-left: auto;
+  padding: 0.2rem 0.6rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.concierge-view-map-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* Clarification quick-reply chips */
+.concierge-clarification-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 0 0 0;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.concierge-chip {
+  padding: 0.35rem 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.concierge-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(108, 99, 255, 0.06);
+}
+
+/* Panel toggle button in input area */
+.concierge-panel-toggle {
+  flex-shrink: 0;
+  padding: 0.45rem 0.85rem;
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.concierge-panel-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---- Chat Page (legacy fallback, used for unavailable state) ---- */
 .chat-page {
   display: flex;
   flex-direction: column;
@@ -1717,5 +1951,25 @@ body {
   .eda-rank-bar-cell {
     width: 80px;
     min-width: 80px;
+  }
+  .concierge-layout {
+    flex-direction: column;
+    max-height: none;
+  }
+  .concierge-layout.panel-open .concierge-thread {
+    flex: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .concierge-results-panel {
+    flex: none;
+    max-height: 60vh;
+    border-top: 1px solid var(--border);
+  }
+  .concierge-map-wrap {
+    height: 220px;
+  }
+  .concierge-header-stats {
+    font-size: 0.76rem;
   }
 }

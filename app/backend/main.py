@@ -245,9 +245,17 @@ async def concierge_message(req: ConciergeRequest):
         )
 
     result = session.handle_message(req.message)
+
+    # Attach tier-1 enrichment to each ranked community (mirrors /api/score)
+    raw_results = result.get("results")
+    if raw_results and raw_results.get("rankings"):
+        for community in raw_results["rankings"]:
+            cid = community.get("canonical_id", "")
+            community["enrichment"] = enrichment.enrich(cid)
+
     return ConciergeResponse(
         content=result.get("content", ""),
-        results=result.get("results"),
+        results=raw_results,
         explanations=result.get("explanations"),
         needs_clarification=result.get("needs_clarification"),
         session_id=req.session_id,
