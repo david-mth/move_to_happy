@@ -49,6 +49,7 @@ DATAFRAME_NAMES: dict[str, str] = {
     "geodistance": "tier1/geodistance.csv",
     "tax_rates": "tier1/tax_rates.csv",
     "education": "tier1/county_education.csv",
+    "lake_distance": "tier1/lake_distance.csv",
 }
 
 # ---------------------------------------------------------------------------
