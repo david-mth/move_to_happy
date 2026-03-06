@@ -1,6 +1,8 @@
 """Intake/Interpreter — converts free-text to structured LME fields.
 
 Uses Claude's tool use (function calling) for reliable JSON extraction.
+Claude's raw output is validated through LMEInputExtraction (Pydantic)
+before being returned as a dict — invalid LLM responses are caught early.
 """
 
 from __future__ import annotations
@@ -8,9 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langsmith import traceable
+from pydantic import ValidationError
+
 from .claude_client import ClaudeClient
 from .prompts import INTAKE_PROMPT_SUFFIX
-from .schemas import LME_INPUT_SCHEMA
+from .schemas import LME_INPUT_SCHEMA, LMEInputExtraction
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +47,76 @@ class IntakeInterpreter:
     def __init__(self, claude: ClaudeClient) -> None:
         self._claude = claude
 
+    @traceable(run_type="chain", name="intake_interpret")
     def interpret(self, user_text: str) -> dict[str, Any]:
-        """Extract structured preferences from free-text input."""
-        result = self._claude.generate_structured(
+        """Extract structured preferences from free-text input.
+
+        Claude's output is validated through LMEInputExtraction before
+        being returned as a plain dict for downstream compatibility.
+        """
+        raw = self._claude.generate_structured(
             user_message=(f"{INTAKE_PROMPT_SUFFIX}\n\nUSER INPUT:\n{user_text}"),
             output_schema=LME_INPUT_SCHEMA,
         )
-        return result
+        return self._validate_and_dump(raw)
+
+    @traceable(run_type="chain", name="intake_interpret_async")
+    async def interpret_async(self, user_text: str) -> dict[str, Any]:
+        """Async — extract structured preferences from free-text input."""
+        raw = await self._claude.agenerate_structured(
+            user_message=(f"{INTAKE_PROMPT_SUFFIX}\n\nUSER INPUT:\n{user_text}"),
+            output_schema=LME_INPUT_SCHEMA,
+        )
+        return self._validate_and_dump(raw)
+
+    @staticmethod
+    def _validate_and_dump(raw: dict[str, Any]) -> dict[str, Any]:
+        """Validate Claude's raw output through Pydantic, return as dict.
+
+        If validation fails, attempt to clean known malformed values (e.g.
+        Claude wrapping enum strings as '{"Coastal"}') and retry once before
+        falling back to the raw dict.
+        """
+        try:
+            return LMEInputExtraction.model_validate(raw).model_dump()
+        except ValidationError:
+            cleaned = IntakeInterpreter._clean_raw_extraction(raw)
+            try:
+                return LMEInputExtraction.model_validate(cleaned).model_dump()
+            except ValidationError:
+                logger.exception(
+                    "LMEInputExtraction validation failed after cleaning — "
+                    "using cleaned raw output"
+                )
+                return cleaned
+
+    @staticmethod
+    def _clean_raw_extraction(raw: dict[str, Any]) -> dict[str, Any]:
+        """Strip known Claude formatting artefacts from string fields.
+
+        Claude occasionally wraps single enum values in set notation:
+        '{"Coastal"}' instead of 'Coastal'. Strip braces and quotes.
+        """
+        import copy
+
+        cleaned = copy.deepcopy(raw)
+
+        def _clean_str(val: Any) -> Any:
+            if not isinstance(val, str):
+                return val
+            s = val.strip()
+            # Strip leading/trailing { } and quotes Claude sometimes adds
+            if s.startswith("{") and s.endswith("}"):
+                s = s[1:-1].strip().strip("\"'")
+            return s
+
+        for key in ("preferred_terrain", "preferred_climate"):
+            if key in cleaned:
+                val = _clean_str(cleaned[key])
+                # Treat the literal string "null" as absent
+                cleaned[key] = None if val in ("null", "none", "") else val
+
+        return cleaned
 
     def needs_clarification(self, extracted: dict[str, Any]) -> list[str]:
         """Return list of fields needing user clarification."""
@@ -99,9 +167,35 @@ class IntakeInterpreter:
             "terrain": "pref_terrain",
             "cost": "pref_cost",
         }
-        for src, dst in weight_map.items():
-            if src in weights and weights[src] is not None:
-                params[dst] = weights[src]
+        # UserPreferences defaults for all 7 dimensions.
+        _defaults = {
+            "pref_mountains": 0.30,
+            "pref_beach": 0.15,
+            "pref_lake": 0.10,
+            "pref_airport": 0.10,
+            "pref_climate": 0.15,
+            "pref_terrain": 0.10,
+            "pref_cost": 0.10,
+        }
+        _provided_src = {
+            src: val for src, val in (weights or {}).items() if val is not None
+        }
+        if _provided_src:
+            # Build the FULL set of 7 weights: use Claude's values where given,
+            # fall back to defaults for the rest, then normalise the whole set.
+            # This prevents partial Claude weights (e.g. beach+lake+cost summing
+            # to 1.0) from being mixed with non-zero defaults and exceeding 1.0.
+            full_weights: dict[str, float] = {}
+            for src, dst in weight_map.items():
+                if src in _provided_src:
+                    full_weights[dst] = float(_provided_src[src])
+                else:
+                    full_weights[dst] = _defaults[dst]
+            _total = sum(full_weights.values())
+            if _total > 0:
+                _scale = 1.0 / _total
+                for k in full_weights:
+                    params[k] = round(full_weights[k] * _scale, 4)
 
         if extracted.get("preferred_climate"):
             params["preferred_climate"] = extracted["preferred_climate"]

@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any
 
+from langsmith import traceable
+
 from .claude_client import ClaudeClient
 from .schemas import LEAD_SUMMARY_SCHEMA
 
@@ -18,6 +20,7 @@ class LeadSummaryAgent:
     def __init__(self, claude: ClaudeClient) -> None:
         self._claude = claude
 
+    @traceable(run_type="chain", name="lead_summary")
     def generate_summary(
         self,
         conversation_history: list[dict[str, str]],

@@ -92,7 +92,7 @@ export function ConciergeResultsPanel({
         </div>
       </div>
 
-      {/* Map */}
+      {/* Map — taller in the side panel */}
       <div className="concierge-map-wrap">
         <ResultsMap
           rankings={results.rankings}
@@ -104,7 +104,7 @@ export function ConciergeResultsPanel({
         />
       </div>
 
-      {/* Community cards with AI explanations */}
+      {/* Community cards — 2-column grid */}
       <div className="concierge-cards">
         {results.rankings.map((c: ConciergeCommunityScore, i) => (
           <div key={c.canonical_id} className="concierge-card-wrap">

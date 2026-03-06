@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -252,4 +251,4 @@ class LMEEngine:
 
     def to_dict(self, result: LMEResult) -> dict:
         """Convert LMEResult to a JSON-serializable dictionary."""
-        return asdict(result)
+        return result.model_dump()

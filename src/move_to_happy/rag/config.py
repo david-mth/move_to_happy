@@ -1,30 +1,35 @@
-"""RAG configuration."""
+"""RAG configuration — backed by pydantic-settings."""
 
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-@dataclass
-class RAGConfig:
-    """Configuration for the RAG layer."""
+
+class RAGConfig(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_dim: int = 384
-    chunk_size_tokens: int = 512
-    chunk_overlap_tokens: int = 64
-    index_dir: str = "data/rag_index"
+    embedding_dim: int = Field(default=384, gt=0)
+    chunk_size_tokens: int = Field(default=512, gt=0)
+    chunk_overlap_tokens: int = Field(default=64, ge=0)
+    index_dir: str = Field(default="data/rag_index", alias="MTH_RAG_INDEX_DIR")
     s3_prefix: str = "rag-index"
-    default_k: int = 5
+    default_k: int = Field(default=5, gt=0)
 
-    @classmethod
-    def from_env(cls) -> RAGConfig:
-        return cls(
-            index_dir=os.environ.get("MTH_RAG_INDEX_DIR", "data/rag_index"),
-        )
-
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def index_path(self) -> Path:
         return Path(self.index_dir)
+
+    @classmethod
+    def from_env(cls) -> RAGConfig:
+        """Convenience alias — BaseSettings loads env automatically on construction."""
+        return cls()

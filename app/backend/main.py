@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sys
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -157,7 +156,7 @@ async def score(req: ScoreRequest):
         preferred_terrain=req.preferred_terrain,
     )
     result = engine.score(prefs, top_n=req.top_n)
-    raw = asdict(result)
+    raw = result.model_dump()
 
     for community in raw["rankings"]:
         cid = community.get("canonical_id", "")
@@ -244,7 +243,16 @@ async def concierge_message(req: ConciergeRequest):
             session_id=req.session_id,
         )
 
-    result = session.handle_message(req.message)
+    result = await session.handle_message_async(
+        req.message,
+        langsmith_extra={
+            "metadata": {
+                "session_id": req.session_id,
+                "project": "move_to_happy",
+            },
+            "tags": ["concierge", "api"],
+        },
+    )
 
     # Attach tier-1 enrichment to each ranked community (mirrors /api/score)
     raw_results = result.get("results")

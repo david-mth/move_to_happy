@@ -1,7 +1,11 @@
+import { useMemo, useState } from "react";
 import type {
+  ConciergeCommunityScore,
   ConciergeExplanation,
   ConciergeResults,
 } from "../types";
+import { CommunityCard } from "./CommunityCard";
+import { ResultsMap } from "./ResultsMap";
 
 interface Props {
   role: "user" | "assistant";
@@ -181,10 +185,150 @@ function renderTable(lines: string[], keyBase: number) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Inline results — map + card grid embedded directly in the chat message
+// ---------------------------------------------------------------------------
+
+function InlineResults({
+  results,
+  explanations,
+  onViewResults,
+}: {
+  results: ConciergeResults;
+  explanations?: ConciergeExplanation[] | null;
+  onViewResults?: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string>(
+    results.rankings[0]?.canonical_id ?? "",
+  );
+
+  const anchor = useMemo(() => {
+    const r = results.rankings;
+    if (r.length === 0) return { lat: 33.749, lon: -84.388, radiusMiles: 120 };
+    const lat = r.reduce((s, c) => s + c.latitude, 0) / r.length;
+    const lon = r.reduce((s, c) => s + c.longitude, 0) / r.length;
+    const maxDist = Math.max(...r.map((c) => c.dist_to_anchor ?? 60), 60);
+    return { lat, lon, radiusMiles: Math.ceil(maxDist * 1.2) };
+  }, [results.rankings]);
+
+  const selected =
+    results.rankings.find((c) => c.canonical_id === selectedId) ?? null;
+
+  const [afLow, afHigh] = results.affordability_window;
+
+  return (
+    <div className="concierge-inline-results">
+      {/* Header strip */}
+      <div className="concierge-inline-header">
+        <div className="concierge-inline-stats">
+          <span>
+            <strong>{results.total_candidates}</strong> matched
+          </span>
+          <span className="concierge-inline-sep">·</span>
+          <span>
+            Max <strong>${results.max_purchase_price.toLocaleString()}</strong>
+          </span>
+          {afHigh > 0 && (
+            <>
+              <span className="concierge-inline-sep">·</span>
+              <span>
+                Window{" "}
+                <strong>
+                  ${afLow.toLocaleString()}–${afHigh.toLocaleString()}
+                </strong>
+              </span>
+            </>
+          )}
+          <span className="concierge-inline-sep">·</span>
+          <span className="concierge-inline-eliminated">
+            {results.eliminated_count} outside criteria
+          </span>
+        </div>
+        {onViewResults && (
+          <button className="concierge-view-map-btn" onClick={onViewResults}>
+            Full panel ↗
+          </button>
+        )}
+      </div>
+
+      {/* Map */}
+      <div className="concierge-inline-map-wrap">
+        <ResultsMap
+          rankings={results.rankings}
+          anchorLat={anchor.lat}
+          anchorLon={anchor.lon}
+          radiusMiles={anchor.radiusMiles}
+          selected={selected}
+          onSelect={(c) => setSelectedId(c.canonical_id)}
+        />
+      </div>
+
+      {/* Card grid */}
+      <div className="concierge-inline-cards-grid">
+        {results.rankings.map((c: ConciergeCommunityScore, i) => (
+          <div key={c.canonical_id} className="concierge-inline-card-wrap">
+            <CommunityCard
+              community={c}
+              rank={i + 1}
+              isSelected={c.canonical_id === selectedId}
+              onSelect={() => setSelectedId(c.canonical_id)}
+            />
+            {explanations?.find((e) => e.canonical_city_id === c.canonical_id) && (
+              <InlineExplanation
+                canonicalId={c.canonical_id}
+                explanations={explanations}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InlineExplanation({
+  canonicalId,
+  explanations,
+}: {
+  canonicalId: string;
+  explanations?: ConciergeExplanation[] | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const expl = explanations?.find((e) => e.canonical_city_id === canonicalId);
+  if (!expl) return null;
+
+  return (
+    <div className="concierge-explanation">
+      <button
+        className="concierge-explanation-toggle"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        {open ? "▾" : "▸"} Why this community?
+      </button>
+      {open && (
+        <div className="concierge-explanation-body">
+          <p>{expl.explanation}</p>
+          {expl.spillover_explanation && (
+            <p className="concierge-spillover-note">{expl.spillover_explanation}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main message component
+// ---------------------------------------------------------------------------
+
 export function ConciergeMessage({
   role,
   content,
   results,
+  explanations,
   needs_clarification,
   onChipSend,
   onViewResults,
@@ -194,6 +338,9 @@ export function ConciergeMessage({
       ? getSuggestions(needs_clarification)
       : [];
 
+  const showResults =
+    role === "assistant" && results && results.rankings.length > 0;
+
   return (
     <div className={`chat-msg chat-msg-${role}`}>
       <div className="chat-msg-label">
@@ -202,34 +349,16 @@ export function ConciergeMessage({
       <div className="chat-msg-body">
         {role === "assistant" ? renderMarkdown(content) : <p>{content}</p>}
 
-        {/* Inline results summary — appears inside the message bubble */}
-        {role === "assistant" && results && results.rankings.length > 0 && (
-          <div className="concierge-inline-summary">
-            <span className="concierge-summary-stat">
-              <strong>{results.total_candidates}</strong> communities matched
-            </span>
-            <span className="concierge-summary-sep">·</span>
-            <span className="concierge-summary-stat">
-              Max purchase{" "}
-              <strong>${results.max_purchase_price.toLocaleString()}</strong>
-            </span>
-            <span className="concierge-summary-sep">·</span>
-            <span className="concierge-summary-stat">
-              Top <strong>{results.rankings.length}</strong> shown
-            </span>
-            {onViewResults && (
-              <button
-                className="concierge-view-map-btn"
-                onClick={onViewResults}
-              >
-                View on map ↗
-              </button>
-            )}
-          </div>
+        {showResults && (
+          <InlineResults
+            results={results}
+            explanations={explanations}
+            onViewResults={onViewResults}
+          />
         )}
       </div>
 
-      {/* Clarification quick-reply chips — outside the bubble, below */}
+      {/* Clarification quick-reply chips */}
       {chips.length > 0 && onChipSend && (
         <div className="concierge-clarification-chips">
           {chips.map((chip) => (

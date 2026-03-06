@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from langsmith import traceable
+
 from .config import RAGConfig
 from .indexer import FAISSIndex
 from .types import RAGResult
@@ -34,6 +36,7 @@ class RAGRetriever:
         """Load a persisted FAISS index from disk."""
         self._index.load(directory)
 
+    @traceable(run_type="retriever", name="rag_retrieve")
     def retrieve(
         self,
         query: str,

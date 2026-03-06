@@ -682,7 +682,7 @@ body {
 /* Map inside results panel */
 .concierge-map-wrap {
   flex-shrink: 0;
-  height: 280px;
+  height: 360px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -693,23 +693,110 @@ body {
   margin-bottom: 0;
 }
 
-/* Community cards in panel */
+/* Community cards in side panel — 2-column grid */
 .concierge-cards {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0;
   padding: 0.5rem 0.75rem;
   overflow-y: auto;
-  flex: 1;
+  align-content: start;
 }
 
 .concierge-card-wrap {
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.5rem;
   margin-bottom: 0.25rem;
+  padding-right: 0.5rem;
 }
 
-.concierge-card-wrap:last-child {
+.concierge-card-wrap:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+
+.concierge-card-wrap:last-child,
+.concierge-card-wrap:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Inline results — map + card grid embedded inside the chat message bubble
+ * --------------------------------------------------------------------------- */
+
+.concierge-inline-results {
+  margin-top: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.concierge-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.concierge-inline-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.concierge-inline-stats strong {
+  color: var(--text);
+}
+
+.concierge-inline-sep {
+  color: var(--border);
+}
+
+.concierge-inline-eliminated {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.concierge-inline-map-wrap {
+  height: 420px;
+  border-bottom: 1px solid var(--border);
+}
+
+.concierge-inline-map-wrap .map-container {
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  margin-bottom: 0;
+}
+
+/* 2-column card grid below the inline map */
+.concierge-inline-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  max-height: 680px;
+  overflow-y: auto;
+}
+
+.concierge-inline-card-wrap {
+  padding: 0.4rem 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.concierge-inline-card-wrap:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+
+.concierge-inline-card-wrap:last-child,
+.concierge-inline-card-wrap:nth-last-child(2):nth-child(odd) {
   border-bottom: none;
 }
 
@@ -1971,5 +2058,21 @@ body {
   }
   .concierge-header-stats {
     font-size: 0.76rem;
+  }
+  .concierge-inline-map-wrap {
+    height: 280px;
+  }
+  .concierge-inline-cards-grid {
+    grid-template-columns: 1fr;
+    max-height: none;
+  }
+  .concierge-inline-card-wrap:nth-child(odd) {
+    border-right: none;
+  }
+  .concierge-cards {
+    grid-template-columns: 1fr;
+  }
+  .concierge-card-wrap:nth-child(odd) {
+    border-right: none;
   }
 }
